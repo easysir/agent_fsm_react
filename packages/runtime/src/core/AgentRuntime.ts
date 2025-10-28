@@ -1,5 +1,5 @@
-import { Subject } from 'rxjs';
-import { createActor } from 'xstate';
+import { Subject } from "rxjs";
+import { createActor } from "xstate";
 import type {
   AgentConfig,
   AgentContextSnapshot,
@@ -10,11 +10,11 @@ import type {
   RuntimeEventStream,
   TaskNode,
   ToolRegistry,
-} from '../types/index.js';
-import { EventBus } from '../event/EventBus.js';
-import { createAgentMachine } from '../fsm/agentMachine.js';
-import { AgentContext } from './AgentContext.js';
-import { Executor } from './Executor.js';
+} from "../types/index.js";
+import { EventBus } from "../event/EventBus.js";
+import { createAgentMachine } from "../fsm/agentMachine.js";
+import { AgentContext } from "./AgentContext.js";
+import { Executor } from "./Executor.js";
 
 export interface AgentRuntimeOptions {
   config: AgentConfig;
@@ -22,7 +22,7 @@ export interface AgentRuntimeOptions {
 }
 
 export interface AgentRunInput {
-  rootTask: Pick<TaskNode, 'taskId' | 'description' | 'status'> & {
+  rootTask: Pick<TaskNode, "taskId" | "description" | "status"> & {
     parentId?: string;
     children?: string[];
     metadata?: Record<string, unknown>;
@@ -67,9 +67,15 @@ export class AgentRuntime {
         taskId: input.rootTask.taskId,
         description: input.rootTask.description,
         status: input.rootTask.status,
-        ...(input.rootTask.parentId ? { parentId: input.rootTask.parentId } : {}),
-        ...(input.rootTask.metadata ? { metadata: input.rootTask.metadata } : {}),
-        ...(input.rootTask.children ? { children: input.rootTask.children } : {}),
+        ...(input.rootTask.parentId
+          ? { parentId: input.rootTask.parentId }
+          : {}),
+        ...(input.rootTask.metadata
+          ? { metadata: input.rootTask.metadata }
+          : {}),
+        ...(input.rootTask.children
+          ? { children: input.rootTask.children }
+          : {}),
       },
       ...(input.metadata ? { metadata: input.metadata } : {}),
     });
@@ -85,10 +91,12 @@ export class AgentRuntime {
     const result = await new Promise<AgentRunResult>((resolve, reject) => {
       const subscription = actor.subscribe({
         next: (state) => {
+          // get snapshot of agentContext
           const snapshot = agentContext.getSnapshot();
+          // 当有新的状态变更 在这里将snapshot广播出去 用于外界观测
           this.snapshot$.next(snapshot);
           this.emitAgentTransition(state.value as AgentState, snapshot);
-          if (state.status === 'done') {
+          if (state.status === "done") {
             const { executionResult, observation, iterations } = state.context;
             subscription.unsubscribe();
             resolve({
@@ -117,10 +125,13 @@ export class AgentRuntime {
     return result;
   }
 
-  private emitAgentTransition(state: AgentState, snapshot: AgentContextSnapshot): void {
+  private emitAgentTransition(
+    state: AgentState,
+    snapshot: AgentContextSnapshot
+  ): void {
     const event: BusEvent = {
       eventId: `${snapshot.agentId}-${Date.now()}`,
-      type: state === 'finish' ? 'agent.finished' : 'agent.transition',
+      type: state === "finish" ? "agent.finished" : "agent.transition",
       timestamp: Date.now(),
       traceId: snapshot.activeTaskId ?? snapshot.rootTaskId,
       payload: {

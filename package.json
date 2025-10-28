@@ -11,6 +11,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "dev": "pnpm --filter @agent/react-devpanel dev"
+    "dev": "pnpm --filter @agent/react-devpanel dev",
+    "dev:agent": "pnpm --filter @agent/runtime dev"
   }
 }

@@ -50,12 +50,12 @@ export interface EventPayload {
 }
 
 export interface BusEvent {
-  eventId: string;
-  type: EventType;
-  timestamp: number;
-  traceId: string;
-  relatedTaskId?: string;
-  payload: EventPayload;
+  eventId: string; // 事件唯一标识
+  type: EventType; // 事件类型，用于区分工具调用、状态切换等
+  timestamp: number; // 事件发生的时间戳（毫秒）
+  traceId: string; // 链路追踪 ID，用于串联同一次流程
+  relatedTaskId?: string; // 可选，关联的任务 ID
+  payload: EventPayload; // 事件负载，包含上下文数据
 }
 
 export interface AgentConfig {

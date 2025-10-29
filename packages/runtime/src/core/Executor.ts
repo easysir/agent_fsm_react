@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+// 执行器：负责根据计划选择工具并调用，同时在总线上广播请求/结果事件
 import type {
   AgentContextSnapshot,
   BusEvent,
@@ -29,6 +30,7 @@ export class Executor {
     snapshot: AgentContextSnapshot,
     preferredToolId?: string,
   ): Promise<ExecutionResult> {
+    // 如果上层明确指定 preferredToolId，则优先使用该工具；否则取计划里推荐顺序的第一个
     const toolId = preferredToolId ?? planStep.toolCandidates[0];
     if (!toolId) {
       throw new Error(`No tool candidate available for task ${planStep.taskId}`);

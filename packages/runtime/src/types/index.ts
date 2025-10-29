@@ -23,6 +23,7 @@ export interface PlanStep {
   timeoutMs?: number;
   retryLimit?: number;
   next?: string[];
+  toolParameters?: Record<string, unknown>;
 }
 
 export interface Observation {

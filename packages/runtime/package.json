@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "eventemitter3": "^5.0.1",
+    "mathjs": "^14.0.0",
     "nanoid": "^5.0.6",
     "rxjs": "^7.8.1",
     "xstate": "^5.10.0",

@@ -56,7 +56,10 @@ export class Executor {
     const input: ToolInput = {
       taskId: planStep.taskId,
       traceId,
-      params: { goal: planStep.goal },
+      params: {
+        goal: planStep.goal,
+        ...(planStep.toolParameters ?? {}),
+      },
       context: snapshot,
     };
 

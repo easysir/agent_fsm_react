@@ -95,6 +95,7 @@ export class AgentRuntime {
           const snapshot = agentContext.getSnapshot();
           // 当有新的状态变更 在这里将snapshot广播出去 用于外界观测
           this.snapshot$.next(snapshot);
+          // 通过 eventBus 把状态变更时内部的快照等广播出去
           this.emitAgentTransition(state.value as AgentState, snapshot);
           if (state.status === "done") {
             const { executionResult, observation, iterations } = state.context;

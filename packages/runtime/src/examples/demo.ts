@@ -25,6 +25,14 @@ async function main() {
     },
   });
 
+  runtime.streams.events$.subscribe({
+    next: (event) => console.log("Bus event:", event),
+  });
+
+  runtime.streams.snapshots$.subscribe({
+    next: (snapshot) => console.log("Agent snapshot:", snapshot),
+  });
+
   const result = await runtime.run({
     rootTask: {
       taskId: "task-root",

@@ -27,13 +27,13 @@ export interface PlanStep {
 }
 
 export interface Observation {
-  source: 'tool' | 'user' | 'system';
-  relatedTaskId: string;
-  timestamp: number;
-  payload: Record<string, unknown>;
-  success: boolean;
-  latencyMs?: number;
-  error?: string;
+  source: 'tool' | 'user' | 'system'; // 观测来源：工具执行结果、用户输入或系统事件
+  relatedTaskId: string; // 关联的任务 ID，用于追踪哪一步产生的结果
+  timestamp: number; // 观测发生时间（毫秒时间戳）
+  payload: Record<string, unknown>; // 观测携带的原始数据或输出
+  success: boolean; // 是否成功完成预期目标
+  latencyMs?: number; // 可选：执行耗时（毫秒）
+  error?: string; // 可选：失败时的错误信息
 }
 
 export type EventType =
@@ -77,17 +77,17 @@ export interface Planner {
 }
 
 export interface ReflectInput {
-  planStep: PlanStep;
-  observation: Observation | null;
-  context: AgentContextSnapshot;
-  attempt: number;
+  planStep: PlanStep; // 当前执行的计划步骤
+  observation: Observation | null; // 工具执行后的观测结果
+  context: AgentContextSnapshot; // 反思时的完整上下文快照
+  attempt: number; // 已尝试执行的次数（用于控制重试）
 }
 
 export interface ReflectOutcome {
-  status: 'continue' | 'retry' | 'fallback' | 'user_input' | 'abort' | 'complete';
-  message?: string;
-  updatedTasks?: TaskNode[];
-  fallbackToolId?: string;
+  status: 'continue' | 'retry' | 'fallback' | 'user_input' | 'abort' | 'complete'; // 状态机下一步动作
+  message?: string; // 可选的提示信息，用于记录或展示
+  updatedTasks?: TaskNode[]; // 需要同步更新状态的任务列表
+  fallbackToolId?: string; // 可选的备用工具 ID（用于 fallback/retry 场景）
 }
 
 export interface Reflector {

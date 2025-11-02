@@ -5,24 +5,40 @@ export type AgentState = 'plan' | 'act' | 'observe' | 'reflect' | 'finish' | 'er
 export type TaskStatus = 'pending' | 'in_progress' | 'succeeded' | 'failed';
 
 export interface TaskNode {
+  /** 任务唯一标识，用于上下文查找与链路追踪 */
   taskId: string;
+  /** 任务目标或描述，便于 planner/reflector 理解语义 */
   description: string;
+  /** 任务当前状态：pending/in_progress/succeeded/failed */
   status: TaskStatus;
+  /** 可选：父任务 ID，用于形成任务树结构 */
   parentId?: string;
+  /** 下级子任务 ID 列表（只存 ID，具体数据在 tasks 表里） */
   children: string[];
+  /** 可选：任务附带的自定义元数据 */
   metadata?: Record<string, unknown>;
+  /** 任务创建时间戳（毫秒） */
   createdAt: number;
+  /** 最近一次更新的时间戳（毫秒） */
   updatedAt: number;
 }
 
 export interface PlanStep {
+  /** 当前计划步骤关联的任务 ID，应保持与激活任务一致 */
   taskId: string;
+  /** 本步骤的目标描述，用于指导工具输入与后续反思 */
   goal: string;
+  /** 优先级顺序的工具候选列表，执行器将按顺序尝试 */
   toolCandidates: string[];
+  /** 判断步骤成功的条件说明，供反思器和执行器参考 */
   successCriteria: string;
+  /** 可选：该步骤允许的最大执行耗时（毫秒） */
   timeoutMs?: number;
+  /** 可选：本步骤允许的重试次数 */
   retryLimit?: number;
+  /** 可选：规划出的后续任务 ID 列表，用于更新任务树 */
   next?: string[];
+  /** 可选：传递给工具的参数，键值对形式 */
   toolParameters?: Record<string, unknown>;
 }
 
@@ -59,10 +75,15 @@ export interface BusEvent {
 }
 
 export interface AgentConfig {
+  /** 唯一标识当前代理实例，用于事件广播与快照追踪 */
   agentId: string;
+  /** 负责基于上下文生成下一步 PlanStep 的规划器实现 */
   planner: Planner;
+  /** 在执行后进行复盘并决定状态机后续流向的反思器实现 */
   reflector: Reflector;
+  /** 提供工具查找/注册能力的工具注册表 */
   toolRegistry: ToolRegistry;
+  /** 可选的执行守卫配置，例如最大重试次数、耗时等限制 */
   guard?: ExecutionGuard;
 }
 
@@ -109,8 +130,11 @@ export interface ToolResult {
 }
 
 export interface ToolAdapter {
+  /** 工具唯一标识，供 planner/executor 引用 */
   id: string;
+  /** 工具作用或使用方式的简短说明 */
   description: string;
+  /** 执行工具主逻辑，输入工具调用上下文，返回结果 */
   execute(input: ToolInput): Promise<ToolResult>;
 }
 
@@ -126,13 +150,21 @@ export interface ExecutionResult {
 }
 
 export interface AgentContextSnapshot {
+  /** 当前代理实例 ID，方便日志与事件追踪 */
   agentId: string;
+  /** 根任务 ID，用作整个任务树的入口 */
   rootTaskId: string;
+  /** 当前激活的任务 ID，若无激活任务则为 null */
   activeTaskId: string | null;
+  /** 系统维护的任务节点列表，键为 taskId */
   tasks: Record<string, TaskNode>;
+  /** 最近记录的观测结果列表 */
   observations: Observation[];
+  /** 代理的工作记忆，用于跨步骤共享状态 */
   workingMemory: Record<string, unknown>;
+  /** 额外的上下文元数据 */
   metadata: Record<string, unknown>;
+  /** 当前迭代次数，配合守卫或日志使用 */
   iteration: number;
 }
 

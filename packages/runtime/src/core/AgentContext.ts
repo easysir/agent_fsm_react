@@ -40,10 +40,12 @@ export class AgentContext {
     };
   }
 
+  // 返回当前上下文的深拷贝，避免外部直接修改内部状态
   public getSnapshot(): AgentContextSnapshot {
     return deepClone(this.snapshot);
   }
 
+  // 更新当前激活任务并递增迭代计数
   public setActiveTask(taskId: string | null): void {
     this.snapshot = {
       ...this.snapshot,
@@ -52,6 +54,7 @@ export class AgentContext {
     };
   }
 
+  // 新增或更新任务节点，自动补齐时间戳与子任务列表
   public upsertTask(task: TaskNode): void {
     const now = Date.now();
     const existing = this.snapshot.tasks[task.taskId];
@@ -71,6 +74,7 @@ export class AgentContext {
     };
   }
 
+  // 将指定子任务挂载到父任务下，避免重复关联
   public linkChild(parentId: string, childId: string): void {
     const parent = this.snapshot.tasks[parentId];
     if (!parent) return;
@@ -88,6 +92,7 @@ export class AgentContext {
     };
   }
 
+  // 追加一条观测记录，供后续规划和反思使用
   public addObservation(observation: Observation): void {
     this.snapshot = {
       ...this.snapshot,
@@ -95,6 +100,7 @@ export class AgentContext {
     };
   }
 
+  // 合并新的工作记忆字段，保持已有键值
   public mergeWorkingMemory(memory: Record<string, unknown>): void {
     this.snapshot = {
       ...this.snapshot,
@@ -102,6 +108,7 @@ export class AgentContext {
     };
   }
 
+  // 对快照执行部分更新，同时处理工作记忆/元数据合并与迭代计数
   public patch(update: AgentContextUpdate): void {
     this.snapshot = {
       ...this.snapshot,

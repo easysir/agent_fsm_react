@@ -42,7 +42,7 @@ const DEFAULT_SYSTEM_PROMPT = [
   "Select tools by listing their ids in toolCandidates, ordered by preference.",
   "If the current step should immediately execute a tool, include it in toolCandidates and keep next as an array of task ids (strings).",
   "Do not place objects inside the next array; it must only contain strings representing task ids.",
-  "Provide tool-specific inputs under toolParameters as a JSON object (e.g., toolParameters: { \"expression\": \"...\" }).",
+  'Provide tool-specific inputs under toolParameters as a JSON object (e.g., toolParameters: { "expression": "..." }).',
   "If no follow-up tasks are ready, return an empty array for next.",
 ].join(" ");
 
@@ -120,11 +120,7 @@ export class SimplePlanner implements Planner {
         temperature: 0.2,
         maxTokens: 600,
       });
-      // eslint-disable-next-line no-console
-      console.info("[SimplePlanner] Raw LLM content", { content });
       const parsed = this.parsePlanResponse(content);
-      // eslint-disable-next-line no-console
-      console.info("[SimplePlanner] Parsed LLM plan", { parsed });
 
       return this.mergePlan(context, parsed, tools, fallback);
     } catch (error) {
@@ -223,7 +219,7 @@ export class SimplePlanner implements Planner {
       "",
       "Return a strict JSON object with the keys: goal, toolCandidates, successCriteria, timeoutMs, retryLimit, next, toolParameters.",
       `Use only tool identifiers from the provided list. The active task ID must remain "${activeTaskId}".`,
-      'toolCandidates must list preferred tool ids only. Do not fabricate new tool identifiers.',
+      "toolCandidates must list preferred tool ids only. Do not fabricate new tool identifiers.",
       'The "next" field must be an array of task id strings only. Never include objects, parameters, or tool names inside "next".',
       'If you want the agent to execute a tool immediately, add it to toolCandidates and leave "next" as [] unless you are scheduling follow-up task ids.',
       'Provide tool input values inside toolParameters as a JSON object with simple key/value pairs (for example: { "expression": "10 * 5" }).',
@@ -247,8 +243,15 @@ export class SimplePlanner implements Planner {
     tools: ToolSummary[],
     fallback: PlanStep
   ): PlanStep {
+    // 该方法负责把 LLM 输出的原始 plan 结果与当前上下文、可用工具列表以及兜底策略进行融合，
+    // 生成最终可执行的 PlanStep。处理流程：
+    // 1. 锚定当前激活任务，确保 taskId 正确；
+    // 2. 过滤掉未注册的工具候选，如为空则回退到 fallback；
+    // 3. 校验 timeout/retryLimit 等数值，缺失时使用兜底值；
+    // 4. 整理 next/参数信息，为后续步骤保留作业线索。
     const activeTaskId = context.activeTaskId ?? context.rootTaskId;
     const allowedTools = new Set(tools.map((tool) => tool.id));
+    // 过滤工具候选：去除空字符串、剔除未注册工具
     const normalizedCandidates = plan.toolCandidates
       .map((candidate) => candidate.trim())
       .filter(
@@ -279,6 +282,7 @@ export class SimplePlanner implements Planner {
         : fallback.next;
 
     const nextPlan: PlanStep = {
+      // 将 plan 与上下文融合，始终使用当前激活任务 ID
       taskId: activeTaskId,
       goal: plan.goal.trim(),
       toolCandidates: Array.from(new Set(normalizedCandidates)),
@@ -286,14 +290,17 @@ export class SimplePlanner implements Planner {
     };
 
     if (typeof timeoutMsCandidate === "number") {
+      // 仅在合法数值时设置超时时间
       nextPlan.timeoutMs = timeoutMsCandidate;
     }
 
     if (typeof retryLimitCandidate === "number") {
+      // 同理：重试次数不存在或非法时沿用 fallback
       nextPlan.retryLimit = retryLimitCandidate;
     }
 
     if (Array.isArray(nextCandidate) && nextCandidate.length > 0) {
+      // next 表示后续计划要激活的任务 ID 列表
       nextPlan.next = nextCandidate;
     }
 
@@ -302,6 +309,7 @@ export class SimplePlanner implements Planner {
       typeof plan.toolParameters === "object" &&
       Object.keys(plan.toolParameters).length > 0
     ) {
+      // 工具参数直接透传，供执行器调用工具时使用
       nextPlan.toolParameters = plan.toolParameters;
     }
 

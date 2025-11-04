@@ -35,7 +35,7 @@ async function main() {
 
   const result = await runtime.run({
     rootTask: {
-      taskId: "task-root",
+      taskId: "task-math-calc",
       description: "帮我计算一下 10 * 5 + (5^3) - 10 的结果",
       status: "pending",
     },

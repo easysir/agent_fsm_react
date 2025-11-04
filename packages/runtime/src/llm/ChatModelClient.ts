@@ -155,18 +155,6 @@ export class ChatModelClient {
         Authorization: `Bearer ${this.apiKey}`,
       };
 
-      // eslint-disable-next-line no-console
-      console.info("[ChatModelClient] Request payload", {
-        provider: this.provider,
-        endpoint: this.endpoint,
-        hasApiKey: Boolean(this.apiKey),
-        headers: {
-          ...headers,
-          Authorization: this.apiKey ? "Bearer ***redacted***" : "",
-        },
-        body,
-      });
-
       const response = await fetch(this.endpoint, {
         method: "POST",
         headers,

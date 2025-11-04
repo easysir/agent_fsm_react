@@ -1,36 +1,38 @@
 // @ts-nocheck
-import { assign } from 'xstate';
+import { assign } from "xstate";
 import type {
   AgentConfig,
   ExecutionResult,
   Observation,
   PlanStep,
   ReflectOutcome,
-} from '../types/index.js';
-import type { MachineContext } from './agentTypes.js';
+} from "../types/index.js";
+import type { MachineContext } from "./agentTypes.js";
 
-export function createActions(guardConfig: AgentConfig['guard']) {
+export function createActions(guardConfig: AgentConfig["guard"]) {
   return {
     checkGuards: ({ context }: { context: MachineContext }) => {
       const elapsed = Date.now() - context.startedAt;
       if (
-        typeof guardConfig?.maxDurationMs === 'number' &&
+        typeof guardConfig?.maxDurationMs === "number" &&
         elapsed > guardConfig.maxDurationMs
       ) {
         throw new Error(
-          `Agent exceeded max duration ${guardConfig.maxDurationMs}ms`,
+          `Agent exceeded max duration ${guardConfig.maxDurationMs}ms`
         );
       }
       if (
-        typeof guardConfig?.maxIterations === 'number' &&
+        typeof guardConfig?.maxIterations === "number" &&
         context.iterations >= guardConfig.maxIterations
       ) {
         throw new Error(
-          `Agent exceeded max iterations ${guardConfig.maxIterations}`,
+          `Agent exceeded max iterations ${guardConfig.maxIterations}`
         );
       }
     },
-    storePlanStep: assign<MachineContext, any>((context, event) => {
+    storePlanStep: assign(({ context, event }) => {
+      const eventKeys =
+        event && typeof event === "object" ? Object.keys(event) : [];
       const planStep = (event as { output?: PlanStep })?.output;
       if (!planStep) {
         return {
@@ -40,7 +42,7 @@ export function createActions(guardConfig: AgentConfig['guard']) {
           attempt: 0,
         };
       }
-      console.log('[agentMachine] plan stored', { taskId: planStep.taskId });
+      console.log("[agentMachine] plan stored", { taskId: planStep.taskId });
       return {
         planStep,
         executionResult: null,
@@ -48,24 +50,19 @@ export function createActions(guardConfig: AgentConfig['guard']) {
         attempt: 0,
       };
     }),
-    storeExecutionResult: assign<MachineContext, any>((context, event) => {
+    storeExecutionResult: assign(({ context, event }) => {
       const executionResult =
         (event as { output?: ExecutionResult })?.output ?? null;
       if (executionResult) {
-        console.log('[agentMachine] act result', {
-          toolId: executionResult.toolId,
-          success: executionResult.result?.success,
-        });
       }
       return {
         executionResult,
         snapshot: context.agentContext.getSnapshot(),
       };
     }),
-    deriveObservation: assign<MachineContext, any>((context) => {
+    deriveObservation: assign(({ context }) => {
       const { executionResult, agentContext: ctx } = context;
       if (!executionResult) {
-        console.log('[agentMachine:observe] no execution result to observe');
         return {
           observation: null,
           snapshot: ctx.getSnapshot(),
@@ -74,13 +71,13 @@ export function createActions(guardConfig: AgentConfig['guard']) {
       const latency = executionResult.result.latencyMs;
       const error = executionResult.result.error;
       const observation: Observation = {
-        source: 'tool',
+        source: "tool",
         relatedTaskId: executionResult.planStep.taskId,
         timestamp: Date.now(),
         payload: executionResult.result.output,
         success: executionResult.result.success,
-        ...(typeof latency === 'number' ? { latencyMs: latency } : {}),
-        ...(typeof error === 'string' ? { error } : {}),
+        ...(typeof latency === "number" ? { latencyMs: latency } : {}),
+        ...(typeof error === "string" ? { error } : {}),
       };
       ctx.addObservation(observation);
       return {
@@ -88,7 +85,7 @@ export function createActions(guardConfig: AgentConfig['guard']) {
         snapshot: ctx.getSnapshot(),
       };
     }),
-    applyReflectOutcome: assign<MachineContext, any>((context, event) => {
+    applyReflectOutcome: assign(({ context, event }) => {
       const outcome = (event as { output?: ReflectOutcome })?.output;
       const ctx = context.agentContext;
       if (!outcome) {
@@ -97,7 +94,7 @@ export function createActions(guardConfig: AgentConfig['guard']) {
           snapshot: ctx.getSnapshot(),
         };
       }
-      console.log('[agentMachine] reflect', outcome.status);
+      console.log("[agentMachine] reflect", outcome.status);
       if (outcome.updatedTasks) {
         outcome.updatedTasks.forEach((task) => ctx.upsertTask(task));
       }
@@ -109,7 +106,7 @@ export function createActions(guardConfig: AgentConfig['guard']) {
         snapshot: ctx.getSnapshot(),
       };
     }),
-    applyRetryOutcome: assign<MachineContext, any>((context, event) => {
+    applyRetryOutcome: assign(({ context, event }) => {
       const outcome = (event as { output?: ReflectOutcome })?.output;
       if (!outcome) {
         return {
@@ -133,7 +130,7 @@ export function createActions(guardConfig: AgentConfig['guard']) {
         },
       };
     }),
-    applyFallbackOutcome: assign<MachineContext, any>((context, event) => {
+    applyFallbackOutcome: assign(({ context, event }) => {
       const outcome = (event as { output?: ReflectOutcome })?.output;
       const ctx = context.agentContext;
       if (!outcome) {
@@ -163,7 +160,7 @@ export function createActions(guardConfig: AgentConfig['guard']) {
         snapshot: ctx.getSnapshot(),
       };
     }),
-    applyAbortOutcome: assign<MachineContext, any>((context, event) => {
+    applyAbortOutcome: assign(({ context, event }) => {
       const outcome = (event as { output?: ReflectOutcome })?.output;
       const ctx = context.agentContext;
       if (!outcome) {
@@ -178,26 +175,26 @@ export function createActions(guardConfig: AgentConfig['guard']) {
         snapshot: ctx.getSnapshot(),
       };
     }),
-    recordFailure: assign<MachineContext, any>((context, event) => {
+    recordFailure: assign(({ context, event }) => {
       const ctx = context.agentContext;
       const errorData =
         (event as { data?: unknown; error?: unknown })?.data ??
         (event as { data?: unknown; error?: unknown })?.error;
-      let message = 'Unknown failure';
+      let message = "Unknown failure";
       if (errorData) {
         if (errorData instanceof Error) {
           message = errorData.message;
-        } else if (typeof errorData === 'string') {
+        } else if (typeof errorData === "string") {
           message = errorData;
         } else if (
-          typeof errorData === 'object' &&
+          typeof errorData === "object" &&
           errorData !== null &&
-          'message' in errorData
+          "message" in errorData
         ) {
           message = String((errorData as { message?: unknown }).message);
         }
       }
-      console.error('[agentMachine] error', message);
+      console.error("[agentMachine] error", message);
       if (ctx) {
         ctx.mergeWorkingMemory({ lastError: message });
       }
@@ -207,23 +204,29 @@ export function createActions(guardConfig: AgentConfig['guard']) {
       };
     }),
     emitFinishEvent: () => {
-      console.log('[agentMachine] finish');
+      console.log("[agentMachine] finish");
     },
     handleError: () => {
       // hook for runtime error handling
     },
-    advanceIteration: assign<MachineContext, any>((context) => ({
+    advanceIteration: assign(({ context }) => ({
       iterations: context.iterations + 1,
       snapshot: context.agentContext.getSnapshot(),
     })),
-    logPlanError: createErrorLogger('plan'),
-    logActError: createErrorLogger('act'),
-    logReflectError: createErrorLogger('reflect'),
+    logPlanError: createErrorLogger("plan"),
+    logActError: createErrorLogger("act"),
+    logReflectError: createErrorLogger("reflect"),
+    logMissingPlanStep: ({ context }: { context: MachineContext }) => {
+      console.warn("[agentMachine] skip reflect, missing planStep", {
+        failures: context.failures,
+        iterations: context.iterations,
+      });
+    },
   };
 }
 
 export function createErrorLogger(scope: string) {
-  return (_: unknown, event: any) => {
+  return ({ event }: { event: any }) => {
     const payload = event?.data ?? event?.error;
     console.error(`[agentMachine] ${scope} error`, payload);
   };

@@ -1,4 +1,4 @@
-import { nanoid } from 'nanoid';
+import { nanoid } from "nanoid";
 // 执行器：负责根据计划选择工具并调用，同时在总线上广播请求/结果事件
 import type {
   AgentContextSnapshot,
@@ -7,8 +7,8 @@ import type {
   PlanStep,
   ToolInput,
   ToolRegistry,
-} from '../types/index.js';
-import { EventBus } from '../event/EventBus.js';
+} from "../types/index.js";
+import { EventBus } from "../event/EventBus.js";
 
 export interface ExecutorOptions {
   toolRegistry: ToolRegistry;
@@ -28,12 +28,14 @@ export class Executor {
   public async execute(
     planStep: PlanStep,
     snapshot: AgentContextSnapshot,
-    preferredToolId?: string,
+    preferredToolId?: string
   ): Promise<ExecutionResult> {
     // 如果上层明确指定 preferredToolId，则优先使用该工具；否则取计划里推荐顺序的第一个
     const toolId = preferredToolId ?? planStep.toolCandidates[0];
     if (!toolId) {
-      throw new Error(`No tool candidate available for task ${planStep.taskId}`);
+      throw new Error(
+        `No tool candidate available for task ${planStep.taskId}`
+      );
     }
 
     const tool = this.toolRegistry.get(toolId);
@@ -44,7 +46,7 @@ export class Executor {
     const traceId = nanoid();
     const requestEvent: BusEvent = {
       eventId: nanoid(),
-      type: 'tool.request',
+      type: "tool.request",
       timestamp: Date.now(),
       traceId,
       relatedTaskId: planStep.taskId,
@@ -71,7 +73,7 @@ export class Executor {
 
     const resultEvent: BusEvent = {
       eventId: nanoid(),
-      type: 'tool.result',
+      type: "tool.result",
       timestamp: Date.now(),
       traceId,
       relatedTaskId: planStep.taskId,

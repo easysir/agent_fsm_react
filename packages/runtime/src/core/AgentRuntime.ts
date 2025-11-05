@@ -15,6 +15,8 @@ import { EventBus } from "../event/EventBus.js";
 import { createAgentMachine } from "../fsm/agentMachine.js";
 import { AgentContext } from "./AgentContext.js";
 import { Executor } from "./Executor.js";
+import { DefaultContextManager } from "../context/DefaultContextManager.js";
+import type { ContextManager } from "../context/DefaultContextManager.interface.js";
 
 export interface AgentRuntimeOptions {
   config: AgentConfig;
@@ -47,10 +49,26 @@ export class AgentRuntime {
 
   private toolRegistry: ToolRegistry;
 
+  private contextManager: ContextManager;
+
   constructor(options: AgentRuntimeOptions) {
-    this.config = options.config;
+    const config = options.config;
+    const plannerContextManager =
+      (config.planner as {
+        getContextManager?: () => ContextManager | undefined;
+      })?.getContextManager?.();
+    this.contextManager =
+      config.contextManager ??
+      plannerContextManager ??
+      new DefaultContextManager();
+    if (!config.contextManager) {
+      config.contextManager = this.contextManager;
+    }
+    this.config = config;
     this.eventBus = options.eventBus ?? new EventBus();
-    this.toolRegistry = options.config.toolRegistry;
+    this.toolRegistry = config.toolRegistry;
+
+    this.attachContextManager(config.planner);
   }
 
   public get streams(): RuntimeEventStream {
@@ -83,6 +101,7 @@ export class AgentRuntime {
     const executor = new Executor({
       eventBus: this.eventBus,
       toolRegistry: this.toolRegistry,
+      contextManager: this.contextManager,
     });
 
     const machine = createAgentMachine(this.config, agentContext, executor);
@@ -124,6 +143,15 @@ export class AgentRuntime {
     });
 
     return result;
+  }
+
+  private attachContextManager(planner: AgentConfig["planner"]): void {
+    const maybeManaged = planner as {
+      setContextManager?: (manager: ContextManager) => void;
+    };
+    if (typeof maybeManaged.setContextManager === "function") {
+      maybeManaged.setContextManager(this.contextManager);
+    }
   }
 
   private emitAgentTransition(

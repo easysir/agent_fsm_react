@@ -163,7 +163,7 @@ export function createAgentMachine(
   };
 
   const machineOptions: any = {
-    actions: createActions(guardConfig),
+    actions: createActions(guardConfig, config.contextManager),
     actors: {
       plannerService: createPlannerService(config),
       executorService: createExecutorService(executor),

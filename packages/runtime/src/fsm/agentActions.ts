@@ -2,14 +2,38 @@
 import { assign } from "xstate";
 import type {
   AgentConfig,
+  AgentContextSnapshot,
   ExecutionResult,
   Observation,
   PlanStep,
   ReflectOutcome,
 } from "../types/index.js";
 import type { MachineContext } from "./agentTypes.js";
+import type { ContextManager } from "../context/DefaultContextManager.interface.js";
 
-export function createActions(guardConfig: AgentConfig["guard"]) {
+export function createActions(
+  guardConfig: AgentConfig["guard"],
+  contextManager?: ContextManager
+) {
+  const warnContextManagerFailure = (scope: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[agentMachine] ${scope} context recording failed (${message})`
+    );
+  };
+
+  const recordObservation = (
+    observation: Observation | null,
+    snapshot: AgentContextSnapshot
+  ): void => {
+    if (!contextManager) {
+      return;
+    }
+    void contextManager
+      .recordObservation(observation, snapshot)
+      .catch((error) => warnContextManagerFailure("observation", error));
+  };
+
   return {
     checkGuards: ({ context }: { context: MachineContext }) => {
       const elapsed = Date.now() - context.startedAt;
@@ -42,7 +66,6 @@ export function createActions(guardConfig: AgentConfig["guard"]) {
           attempt: 0,
         };
       }
-      console.log("[agentMachine] plan stored", { taskId: planStep.taskId });
       return {
         planStep,
         executionResult: null,
@@ -53,8 +76,6 @@ export function createActions(guardConfig: AgentConfig["guard"]) {
     storeExecutionResult: assign(({ context, event }) => {
       const executionResult =
         (event as { output?: ExecutionResult })?.output ?? null;
-      if (executionResult) {
-      }
       return {
         executionResult,
         snapshot: context.agentContext.getSnapshot(),
@@ -63,9 +84,11 @@ export function createActions(guardConfig: AgentConfig["guard"]) {
     deriveObservation: assign(({ context }) => {
       const { executionResult, agentContext: ctx } = context;
       if (!executionResult) {
+        const snapshot = ctx.getSnapshot();
+        recordObservation(null, snapshot);
         return {
           observation: null,
-          snapshot: ctx.getSnapshot(),
+          snapshot,
         };
       }
       const latency = executionResult.result.latencyMs;
@@ -80,9 +103,11 @@ export function createActions(guardConfig: AgentConfig["guard"]) {
         ...(typeof error === "string" ? { error } : {}),
       };
       ctx.addObservation(observation);
+      const snapshot = ctx.getSnapshot();
+      recordObservation(observation, snapshot);
       return {
         observation,
-        snapshot: ctx.getSnapshot(),
+        snapshot,
       };
     }),
     applyReflectOutcome: assign(({ context, event }) => {

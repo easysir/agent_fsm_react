@@ -1,4 +1,5 @@
 import type { Observable } from 'rxjs';
+import type { ContextManager } from '../context/DefaultContextManager.interface.js';
 
 export type AgentState = 'plan' | 'act' | 'observe' | 'reflect' | 'finish' | 'error';
 
@@ -85,6 +86,8 @@ export interface AgentConfig {
   toolRegistry: ToolRegistry;
   /** 可选的执行守卫配置，例如最大重试次数、耗时等限制 */
   guard?: ExecutionGuard;
+  /** 可选的上下文管理器，实现记忆聚合、压缩等策略 */
+  contextManager?: ContextManager;
 }
 
 export interface ExecutionGuard {

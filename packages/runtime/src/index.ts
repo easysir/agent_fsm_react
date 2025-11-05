@@ -5,3 +5,5 @@ export * from './core/Executor.js';
 export * from './event/EventBus.js';
 export * from './registry/ToolRegistry.js';
 export * from './fsm/agentMachine.js';
+export * from './context/DefaultContextManager.js';
+export * from './context/DefaultContextManager.interface.js';

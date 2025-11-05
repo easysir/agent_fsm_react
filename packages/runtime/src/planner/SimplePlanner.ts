@@ -12,6 +12,14 @@ import {
   type ChatModelClientOptions,
   type ChatModelProvider,
 } from "../llm/ChatModelClient.js";
+import { DefaultContextManager } from "../context/DefaultContextManager.js";
+import type {
+  ContextManager,
+  PlanningContext,
+  PlannerToolSummary,
+} from "../context/DefaultContextManager.interface.js";
+
+type ToolSummary = PlannerToolSummary;
 
 export interface SimplePlannerOptions {
   llmClient?: ChatModelClient;
@@ -26,11 +34,7 @@ export interface SimplePlannerOptions {
   defaultToolId?: string;
   planTimeoutMs?: number;
   defaultRetryLimit?: number;
-}
-
-interface ToolSummary {
-  id: string;
-  description: string;
+  contextManager?: ContextManager;
 }
 
 const DEFAULT_SYSTEM_PROMPT = [
@@ -40,6 +44,7 @@ const DEFAULT_SYSTEM_PROMPT = [
   "goal, toolCandidates, successCriteria, timeoutMs, retryLimit, next, toolParameters.",
   "Only reference tool identifiers that were provided.",
   "Select tools by listing their ids in toolCandidates, ordered by preference.",
+  "toolCandidates must list preferred tool ids only. Do not fabricate new tool identifiers.",
   "If the current step should immediately execute a tool, include it in toolCandidates and keep next as an array of task ids (strings).",
   "Do not place objects inside the next array; it must only contain strings representing task ids.",
   'Provide tool-specific inputs under toolParameters as a JSON object (e.g., toolParameters: { "expression": "..." }).',
@@ -81,12 +86,16 @@ export class SimplePlanner implements Planner {
 
   private readonly defaultRetryLimit: number;
 
+  private contextManager: ContextManager;
+
   constructor(options?: SimplePlannerOptions) {
     this.systemPrompt = options?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     this.toolRegistry = options?.toolRegistry;
     this.defaultToolId = options?.defaultToolId ?? "echo";
     this.planTimeoutMs = options?.planTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
     this.defaultRetryLimit = options?.defaultRetryLimit ?? DEFAULT_RETRY_LIMIT;
+    this.contextManager =
+      options?.contextManager ?? new DefaultContextManager();
 
     const legacyLlmOptions = collectLegacyLlmOptions(options);
     const mergedLlmOptions: ChatModelClientOptions = {
@@ -98,6 +107,14 @@ export class SimplePlanner implements Planner {
       options?.llmClient ?? new ChatModelClient(mergedLlmOptions);
   }
 
+  public setContextManager(contextManager: ContextManager): void {
+    this.contextManager = contextManager;
+  }
+
+  public getContextManager(): ContextManager {
+    return this.contextManager;
+  }
+
   async plan(context: AgentContextSnapshot): Promise<PlanStep> {
     const fallback = this.buildFallbackPlan(context);
 
@@ -105,12 +122,22 @@ export class SimplePlanner implements Planner {
       console.warn(
         `[SimplePlanner] Missing API key for ${this.llmClient.getProvider()}, using fallback plan.`
       );
+      await this.persistPlanStep(fallback, context);
       return fallback;
     }
 
+    let planningContext: PlanningContext | null = null;
+    let contextualFallback: PlanStep = fallback;
     try {
       const tools = this.getAvailableTools();
-      const prompt = this.buildPrompt(context, tools);
+      planningContext = await this.contextManager.preparePlanningContext(
+        context
+      );
+      contextualFallback =
+        planningContext.snapshot === context
+          ? fallback
+          : this.buildFallbackPlan(planningContext.snapshot);
+      const prompt = this.buildPrompt(planningContext, tools);
       const messages: ChatMessage[] = [
         { role: "system", content: this.systemPrompt },
         { role: "user", content: prompt },
@@ -121,14 +148,25 @@ export class SimplePlanner implements Planner {
         maxTokens: 600,
       });
       const parsed = this.parsePlanResponse(content);
-
-      return this.mergePlan(context, parsed, tools, fallback);
+      const nextPlan = this.mergePlan(
+        planningContext.snapshot,
+        parsed,
+        tools,
+        contextualFallback
+      );
+      // TODO: 如果 ContextManager 的落盘策略变重，这里需要优化为异步提交以避免阻塞规划流程。
+      await this.persistPlanStep(nextPlan, planningContext.snapshot);
+      return nextPlan;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(
         `[SimplePlanner] LLM planning failed (${message}). Using fallback plan.`
       );
-      return fallback;
+      await this.persistPlanStep(
+        planningContext ? contextualFallback : fallback,
+        planningContext?.snapshot ?? context
+      );
+      return planningContext ? contextualFallback : fallback;
     }
   }
 
@@ -174,56 +212,21 @@ export class SimplePlanner implements Planner {
   }
 
   private buildPrompt(
-    context: AgentContextSnapshot,
+    planningContext: PlanningContext,
     tools: ToolSummary[]
   ): string {
-    const activeTaskId = context.activeTaskId ?? context.rootTaskId;
-    const activeTask = context.tasks[activeTaskId];
-    const taskSummaries = Object.values(context.tasks)
-      .map(
-        (task) =>
-          `- ${task.taskId} [${task.status}]${
-            task.taskId === activeTaskId ? " (active)" : ""
-          }: ${task.description}`
-      )
-      .join("\n");
-    const observations = context.observations.slice(-5).map((obs) => ({
-      taskId: obs.relatedTaskId,
-      success: obs.success,
-      source: obs.source,
-      payload: obs.payload,
-    }));
-    const toolSummaries =
-      tools.length > 0
-        ? tools.map((tool) => `- ${tool.id}: ${tool.description}`).join("\n")
-        : "- No registered tools (fallback to echo).";
-
+    const contextText = this.contextManager.formatPlanningContext(
+      planningContext,
+      { tools, fallbackToolId: this.defaultToolId }
+    );
+    const activeTaskId =
+      planningContext.snapshot.activeTaskId ??
+      planningContext.snapshot.rootTaskId;
     return [
-      `Active task ID: ${activeTaskId}`,
-      `Active task description: ${activeTask?.description ?? "Unknown task"}`,
-      `Active task status: ${activeTask?.status ?? "pending"}`,
+      contextText,
       "",
-      "Task tree:",
-      taskSummaries,
-      "",
-      `Recent observations (latest up to 5): ${JSON.stringify(
-        observations,
-        null,
-        2
-      )}`,
-      `Working memory: ${JSON.stringify(context.workingMemory ?? {}, null, 2)}`,
-      `Agent metadata: ${JSON.stringify(context.metadata ?? {}, null, 2)}`,
-      "",
-      "Available tools:",
-      toolSummaries,
-      "",
-      "Return a strict JSON object with the keys: goal, toolCandidates, successCriteria, timeoutMs, retryLimit, next, toolParameters.",
-      `Use only tool identifiers from the provided list. The active task ID must remain "${activeTaskId}".`,
-      "toolCandidates must list preferred tool ids only. Do not fabricate new tool identifiers.",
-      'The "next" field must be an array of task id strings only. Never include objects, parameters, or tool names inside "next".',
-      'If you want the agent to execute a tool immediately, add it to toolCandidates and leave "next" as [] unless you are scheduling follow-up task ids.',
-      'Provide tool input values inside toolParameters as a JSON object with simple key/value pairs (for example: { "expression": "10 * 5" }).',
-      'If there are no follow-up tasks yet, respond with an empty array for "next".',
+      `Ensure the response keeps the active task ID as "${activeTaskId}".`,
+      "Follow the system instructions above when constructing the JSON plan.",
     ].join("\n");
   }
 
@@ -314,6 +317,20 @@ export class SimplePlanner implements Planner {
     }
 
     return nextPlan;
+  }
+
+  private async persistPlanStep(
+    plan: PlanStep,
+    snapshot: AgentContextSnapshot
+  ): Promise<void> {
+    try {
+      await this.contextManager.recordPlanStep(plan, snapshot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[SimplePlanner] Failed to record plan step via ContextManager (${message})`
+      );
+    }
   }
 
   private extractJsonPayload(content: string): string {

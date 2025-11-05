@@ -9,10 +9,12 @@ import type {
   ToolRegistry,
 } from "../types/index.js";
 import { EventBus } from "../event/EventBus.js";
+import type { ContextManager } from "../context/DefaultContextManager.interface.js";
 
 export interface ExecutorOptions {
   toolRegistry: ToolRegistry;
   eventBus: EventBus;
+  contextManager?: ContextManager;
 }
 
 export class Executor {
@@ -20,9 +22,12 @@ export class Executor {
 
   private eventBus: EventBus;
 
+  private contextManager: ContextManager | undefined;
+
   constructor(options: ExecutorOptions) {
     this.toolRegistry = options.toolRegistry;
     this.eventBus = options.eventBus;
+    this.contextManager = options.contextManager;
   }
 
   public async execute(
@@ -85,10 +90,29 @@ export class Executor {
     };
     this.eventBus.emit(resultEvent);
 
-    return {
+    const executionResult: ExecutionResult = {
       planStep,
       toolId,
       result: { ...result, latencyMs: elapsed },
     };
+    await this.persistExecutionResult(executionResult, snapshot);
+    return executionResult;
+  }
+
+  private async persistExecutionResult(
+    executionResult: ExecutionResult,
+    snapshot: AgentContextSnapshot
+  ): Promise<void> {
+    if (!this.contextManager) {
+      return;
+    }
+    try {
+      await this.contextManager.recordExecutionResult(executionResult, snapshot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[Executor] Failed to record execution result via ContextManager (${message})`
+      );
+    }
   }
 }

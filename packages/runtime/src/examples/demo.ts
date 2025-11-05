@@ -1,7 +1,7 @@
 import { AgentRuntime } from "../core/AgentRuntime.js";
 import { InMemoryToolRegistry } from "../registry/ToolRegistry.js";
-import { SimplePlanner } from "../planner/SimplePlanner.js";
-import { SimpleReflector } from "../reflector/SimpleReflector.js";
+import { BaselinePlanner } from "../planner/BaselinePlanner.js";
+import { BaselineReflector } from "../reflector/BaselineReflector.js";
 import { EchoTool } from "../tools/EchoTool.js";
 import { MathTool } from "../tools/MathTool.js";
 
@@ -14,8 +14,8 @@ async function main() {
   const runtime = new AgentRuntime({
     config: {
       agentId: "demo-agent",
-      planner: new SimplePlanner({ toolRegistry }),
-      reflector: new SimpleReflector(),
+      planner: new BaselinePlanner({ toolRegistry, provider: "deepseek" }),
+      reflector: new BaselineReflector(),
       toolRegistry,
       guard: {
         maxIterations: 10,

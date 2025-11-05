@@ -12,16 +12,16 @@ import {
   type ChatModelClientOptions,
   type ChatModelProvider,
 } from "../llm/ChatModelClient.js";
-import { DefaultContextManager } from "../context/DefaultContextManager.js";
+import { BridgeContextManager } from "../context/BridgeContextManager.js";
 import type {
   ContextManager,
   PlanningContext,
   PlannerToolSummary,
-} from "../context/DefaultContextManager.interface.js";
+} from "../context/BridgeContextManager.interface.js";
 
 type ToolSummary = PlannerToolSummary;
 
-export interface SimplePlannerOptions {
+export interface BaselinePlannerOptions {
   llmClient?: ChatModelClient;
   llm?: ChatModelClientOptions;
   provider?: ChatModelProvider;
@@ -42,9 +42,11 @@ const DEFAULT_SYSTEM_PROMPT = [
   "Use the provided task context, observations, and available tools to craft the next step.",
   "Return a strict JSON object with the following keys:",
   "goal, toolCandidates, successCriteria, timeoutMs, retryLimit, next, toolParameters.",
+  "goal must be a non-empty string summarizing the immediate objective.",
   "Only reference tool identifiers that were provided.",
   "Select tools by listing their ids in toolCandidates, ordered by preference.",
   "toolCandidates must list preferred tool ids only. Do not fabricate new tool identifiers.",
+  "successCriteria must be a single string describing how to verify success; never return an array or object.",
   "If the current step should immediately execute a tool, include it in toolCandidates and keep next as an array of task ids (strings).",
   "Do not place objects inside the next array; it must only contain strings representing task ids.",
   'Provide tool-specific inputs under toolParameters as a JSON object (e.g., toolParameters: { "expression": "..." }).',
@@ -73,7 +75,7 @@ const PlanPayloadSchema = z.union([
 
 type ParsedPlan = z.infer<typeof PlanSchema>;
 
-export class SimplePlanner implements Planner {
+export class BaselinePlanner implements Planner {
   private readonly llmClient: ChatModelClient;
 
   private readonly systemPrompt: string;
@@ -88,14 +90,13 @@ export class SimplePlanner implements Planner {
 
   private contextManager: ContextManager;
 
-  constructor(options?: SimplePlannerOptions) {
+  constructor(options?: BaselinePlannerOptions) {
     this.systemPrompt = options?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     this.toolRegistry = options?.toolRegistry;
     this.defaultToolId = options?.defaultToolId ?? "echo";
     this.planTimeoutMs = options?.planTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
     this.defaultRetryLimit = options?.defaultRetryLimit ?? DEFAULT_RETRY_LIMIT;
-    this.contextManager =
-      options?.contextManager ?? new DefaultContextManager();
+    this.contextManager = options?.contextManager ?? new BridgeContextManager();
 
     const legacyLlmOptions = collectLegacyLlmOptions(options);
     const mergedLlmOptions: ChatModelClientOptions = {
@@ -120,7 +121,7 @@ export class SimplePlanner implements Planner {
 
     if (!this.llmClient.isConfigured()) {
       console.warn(
-        `[SimplePlanner] Missing API key for ${this.llmClient.getProvider()}, using fallback plan.`
+        `[BaselinePlanner] Missing API key for ${this.llmClient.getProvider()}, using fallback plan.`
       );
       await this.persistPlanStep(fallback, context);
       return fallback;
@@ -160,7 +161,7 @@ export class SimplePlanner implements Planner {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(
-        `[SimplePlanner] LLM planning failed (${message}). Using fallback plan.`
+        `[BaselinePlanner] LLM planning failed (${message}). Using fallback plan.`
       );
       await this.persistPlanStep(
         planningContext ? contextualFallback : fallback,
@@ -328,7 +329,7 @@ export class SimplePlanner implements Planner {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(
-        `[SimplePlanner] Failed to record plan step via ContextManager (${message})`
+        `[BaselinePlanner] Failed to record plan step via ContextManager (${message})`
       );
     }
   }
@@ -347,7 +348,7 @@ export class SimplePlanner implements Planner {
 }
 
 function collectLegacyLlmOptions(
-  options?: SimplePlannerOptions
+  options?: BaselinePlannerOptions
 ): ChatModelClientOptions {
   if (!options) {
     return {};

@@ -1,5 +1,5 @@
 import type { Observable } from 'rxjs';
-import type { ContextManager } from '../context/DefaultContextManager.interface.js';
+import type { ContextManager } from '../context/BridgeContextManager.interface.js';
 
 export type AgentState = 'plan' | 'act' | 'observe' | 'reflect' | 'finish' | 'error';
 

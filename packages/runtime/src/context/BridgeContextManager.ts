@@ -8,9 +8,9 @@ import type {
   ContextManager,
   PlannerContextFormatOptions,
   PlanningContext,
-} from "./DefaultContextManager.interface.js";
+} from "./BridgeContextManager.interface.js";
 
-export interface DefaultContextManagerOptions {
+export interface BridgeContextManagerOptions {
   /**
    * 控制在规划阶段提供给 LLM 的观测条数上限。
    * 默认为 5，与原有实现保持一致。
@@ -19,14 +19,14 @@ export interface DefaultContextManagerOptions {
 }
 
 /**
- * DefaultContextManager 负责在不改变业务行为的前提下，
+ * BridgeContextManager 负责在不改变业务行为的前提下，
  * 将 AgentContextSnapshot 转换为 Planner 所需的上下文视图。
  * 未来若需要引入记忆压缩、长期记忆检索等能力，可以通过实现 ContextManager 接口替换本类。
  */
-export class DefaultContextManager implements ContextManager {
+export class BridgeContextManager implements ContextManager {
   private readonly maxRecentObservations: number;
 
-  constructor(options?: DefaultContextManagerOptions) {
+  constructor(options?: BridgeContextManagerOptions) {
     this.maxRecentObservations = options?.maxRecentObservations ?? 5;
   }
 

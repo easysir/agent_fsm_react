@@ -71,7 +71,6 @@ export class ChatModelClient {
   private readonly headers: Record<string, string>;
 
   constructor(options?: ChatModelClientOptions) {
-    console.info("[ChatModelClient] Constructor options", options);
     this.provider = resolveProvider(options);
     const defaults = PROVIDER_DEFAULTS[this.provider];
 
@@ -225,6 +224,7 @@ function resolveProvider(options?: ChatModelClientOptions): ChatModelProvider {
 
   const preferredProviders: ChatModelProvider[] = ["openai", "deepseek"];
 
+  // 顺序选择能获取到对应 apiKeyEnv 的模型provider
   for (const provider of preferredProviders) {
     const keyEnv = PROVIDER_DEFAULTS[provider].apiKeyEnv;
     if (process.env[keyEnv]) {
@@ -232,6 +232,7 @@ function resolveProvider(options?: ChatModelClientOptions): ChatModelProvider {
     }
   }
 
+  // 默认返回 openai
   return "openai";
 }
 

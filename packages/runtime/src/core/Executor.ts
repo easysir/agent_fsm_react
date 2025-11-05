@@ -9,7 +9,7 @@ import type {
   ToolRegistry,
 } from "../types/index.js";
 import { EventBus } from "../event/EventBus.js";
-import type { ContextManager } from "../context/DefaultContextManager.interface.js";
+import type { ContextManager } from "../context/BridgeContextManager.interface.js";
 
 export interface ExecutorOptions {
   toolRegistry: ToolRegistry;

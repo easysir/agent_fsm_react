@@ -15,8 +15,8 @@ import { EventBus } from "../event/EventBus.js";
 import { createAgentMachine } from "../fsm/agentMachine.js";
 import { AgentContext } from "./AgentContext.js";
 import { Executor } from "./Executor.js";
-import { DefaultContextManager } from "../context/DefaultContextManager.js";
-import type { ContextManager } from "../context/DefaultContextManager.interface.js";
+import { BridgeContextManager } from "../context/BridgeContextManager.js";
+import type { ContextManager } from "../context/BridgeContextManager.interface.js";
 
 export interface AgentRuntimeOptions {
   config: AgentConfig;
@@ -60,7 +60,7 @@ export class AgentRuntime {
     this.contextManager =
       config.contextManager ??
       plannerContextManager ??
-      new DefaultContextManager();
+      new BridgeContextManager();
     if (!config.contextManager) {
       config.contextManager = this.contextManager;
     }

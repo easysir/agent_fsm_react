@@ -9,7 +9,7 @@ import type {
   ReflectOutcome,
 } from "../types/index.js";
 import type { MachineContext } from "./agentTypes.js";
-import type { ContextManager } from "../context/DefaultContextManager.interface.js";
+import type { ContextManager } from "../context/BridgeContextManager.interface.js";
 
 export function createActions(
   guardConfig: AgentConfig["guard"],
@@ -119,7 +119,6 @@ export function createActions(
           snapshot: ctx.getSnapshot(),
         };
       }
-      console.log("[agentMachine] reflect", outcome.status);
       if (outcome.updatedTasks) {
         outcome.updatedTasks.forEach((task) => ctx.upsertTask(task));
       }

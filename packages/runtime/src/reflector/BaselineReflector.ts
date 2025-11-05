@@ -1,5 +1,5 @@
 /**
- * SimpleReflector 是一个基础的反思器实现，用于在工具执行完成后根据观察结果决定代理的下一步动作。
+ * BaselineReflector 是一个基础的反思器实现，用于在工具执行完成后根据观察结果决定代理的下一步动作。
  *
  * 主要职责：
  * 1. 根据工具执行的观察结果判断是否需要重试、继续规划、直接完成或终止。
@@ -20,7 +20,7 @@ import type {
   TaskNode,
 } from "../types/index.js";
 
-export class SimpleReflector implements Reflector {
+export class BaselineReflector implements Reflector {
   async reflect(input: ReflectInput): Promise<ReflectOutcome> {
     const { observation, planStep, attempt } = input;
 

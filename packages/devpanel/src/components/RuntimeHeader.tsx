@@ -2,11 +2,13 @@ import { useMemo } from 'react';
 import { useRuntimeStore } from '../store/runtimeStore';
 
 export function RuntimeHeader() {
-  const { status, snapshots, connect, disconnect } = useRuntimeStore((state) => ({
+  const { status, snapshots, connect, disconnect, isRunning, error } = useRuntimeStore((state) => ({
     status: state.status,
     snapshots: state.snapshots,
     connect: state.connect,
     disconnect: state.disconnect,
+    isRunning: state.isRunning,
+    error: state.error,
   }));
 
   const latest = snapshots[snapshots.length - 1];
@@ -36,10 +38,29 @@ export function RuntimeHeader() {
         </button>
       </div>
       <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-        <StatusBadge label="Status" value={status} tone={status === 'connected' ? 'green' : 'gray'} />
+        <StatusBadge 
+          label="Status" 
+          value={isRunning ? 'Running' : status} 
+          tone={status === 'connected' ? (isRunning ? 'blue' : 'green') : status === 'error' ? 'red' : 'gray'} 
+        />
         <StatusBadge label="Iterations" value={latest?.iteration ?? 0} tone="blue" />
         <StatusBadge label="Active Task" value={activeTask?.description ?? 'Idle'} tone="purple" />
       </div>
+      {error && status === 'error' && (
+        <div
+          style={{
+            marginTop: '1rem',
+            padding: '0.75rem',
+            backgroundColor: '#fee2e2',
+            border: '1px solid #fca5a5',
+            borderRadius: '6px',
+            color: '#991b1b',
+            fontSize: '0.9rem',
+          }}
+        >
+          {error}
+        </div>
+      )}
     </header>
   );
 }
@@ -47,7 +68,7 @@ export function RuntimeHeader() {
 interface StatusBadgeProps {
   label: string;
   value: string | number;
-  tone: 'green' | 'gray' | 'blue' | 'purple';
+  tone: 'green' | 'gray' | 'blue' | 'purple' | 'red';
 }
 
 function StatusBadge({ label, value, tone }: StatusBadgeProps) {
@@ -56,6 +77,7 @@ function StatusBadge({ label, value, tone }: StatusBadgeProps) {
     gray: '#64748b',
     blue: '#2563eb',
     purple: '#7c3aed',
+    red: '#dc2626',
   };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>

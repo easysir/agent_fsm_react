@@ -9,3 +9,4 @@ export * from './context/BridgeContextManager.js';
 export * from './context/BridgeContextManager.interface.js';
 export * from './planner/BaselinePlanner.js';
 export * from './reflector/BaselineReflector.js';
+export * from './server/devpanelBridge.js';

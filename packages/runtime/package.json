@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run",
-    "dev": "tsx watch src/examples/demo.ts"
+    "dev": "tsx watch src/examples/demo.ts",
+    "dev:bridge": "tsx src/server/devpanelBridge.ts"
   },
   "dependencies": {
     "eventemitter3": "^5.0.1",

@@ -3,6 +3,8 @@ import { createActor } from "xstate";
 import type {
   AgentConfig,
   AgentContextSnapshot,
+  AgentRunInput,
+  AgentRunResult,
   AgentState,
   BusEvent,
   ExecutionResult,
@@ -21,23 +23,6 @@ import type { ContextManager } from "../context/BridgeContextManager.interface.j
 export interface AgentRuntimeOptions {
   config: AgentConfig;
   eventBus?: EventBus;
-}
-
-export interface AgentRunInput {
-  rootTask: Pick<TaskNode, "taskId" | "description" | "status"> & {
-    parentId?: string;
-    children?: string[];
-    metadata?: Record<string, unknown>;
-  };
-  metadata?: Record<string, unknown>;
-}
-
-export interface AgentRunResult {
-  state: AgentState;
-  iterations: number;
-  lastObservation: Observation | null;
-  executionResult: ExecutionResult | null;
-  finalSnapshot: AgentContextSnapshot;
 }
 
 export class AgentRuntime {

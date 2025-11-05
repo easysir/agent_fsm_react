@@ -1,47 +1,45 @@
 # Agent ReAct FSM Monorepo
 
-This repository hosts a monorepo that combines a finite-state-machine-driven ReAct agent runtime with a visualization/debugging dashboard. The workspace consists of two packages:
+基于有限状态机的 ReAct Agent 运行时框架，支持 Plan → Act → Observe → Reflect → Finish 循环，并提供可视化调试面板。
 
-- `packages/runtime` (`@agent/runtime`): Node/TypeScript runtime core implementing the `Plan → Act → Observe → Reflect → Finish` loop, agent context management, and tool invocation event bus.
-- `packages/devpanel` (`@agent/react-devpanel`): React + Vite debugging panel that visualizes agent state, task tree, event timeline, and tool activity for monitoring and human intervention.
+![Agent Runtime Devpanel Preview](docs/preview.png)
 
-See `docs/architecture.md` for the full design.
+## 快速开始
 
-## Getting Started
+### 安装依赖
 
 ```bash
 pnpm install
 ```
 
-### Runtime Demo
-```bash
-pnpm --filter @agent/runtime dev
-```
-Runs `src/demo.ts`, showcasing a minimal Plan → Act → Observe → Reflect → Finish cycle and dumping the resulting snapshot to the terminal.
+### 启动桥接服务器
 
-### Debug Panel
+```bash
+pnpm --filter @agent/runtime dev:bridge
+```
+
+服务器将在 `http://localhost:3030` 启动。
+
+### 启动开发面板
+
 ```bash
 pnpm --filter @agent/react-devpanel dev
 ```
 
-Open `http://localhost:5173` to inspect the mock data feed displaying status overview, task tree, timeline, and tool activity. Replace the mock runtime connector with a real backend stream when ready.
+打开 `http://localhost:5173`，点击 "Start" 连接服务器，然后可以：
 
-## Project Structure
+- 查看 Agent 执行状态
+- 发送任务并实时监控执行过程
+- 查看任务树、工具活动和事件时间线
+
+## 项目结构
+
 ```
-.
-├── docs/
-│   └── architecture.md    # Architecture overview
-├── packages/
-│   ├── runtime/           # Runtime core (Node/TypeScript)
-│   │   ├── src/
-│   │   └── package.json
-│   └── devpanel/          # Debug panel (React/Vite)
-│       ├── src/
-│       └── package.json
-└── package.json           # pnpm workspace configuration
+packages/
+├── runtime/      # 运行时核心（Node/TypeScript）
+└── devpanel/     # 开发面板（React/Vite）
 ```
 
-## Next Steps
-- Replace the mock connector in the dev panel with a WebSocket/SSE integration against the runtime.
-- Add unit and integration tests covering FSM transitions, tool execution, and recovery strategies.
-- Introduce configurable tool registration, logging/metrics exports, and explore multi-agent coordination.
+## 文档
+
+详细架构设计请参考 [docs/architecture.md](docs/architecture.md)

@@ -1,5 +1,11 @@
 import { nanoid } from 'nanoid';
-import type { AgentContextSnapshot, AgentContextUpdate, Observation, TaskNode } from '../types/index.js';
+import type {
+  AgentContextSnapshot,
+  AgentContextUpdate,
+  MasterPlan,
+  Observation,
+  TaskNode,
+} from '../types/index.js';
 
 export interface AgentContextOptions {
   agentId: string;
@@ -37,12 +43,46 @@ export class AgentContext {
       workingMemory: {},
       metadata: options.metadata ? { ...options.metadata } : {},
       iteration: 0,
+      masterPlan: null,
     };
   }
 
   // 返回当前上下文的深拷贝，避免外部直接修改内部状态
   public getSnapshot(): AgentContextSnapshot {
     return deepClone(this.snapshot);
+  }
+
+  // 读取当前 master plan 的深拷贝，避免外部篡改内部状态
+  public getMasterPlan(): MasterPlan | null {
+    return this.snapshot.masterPlan
+      ? deepClone(this.snapshot.masterPlan)
+      : null;
+  }
+
+  // 设置新的 master plan，可以传入 null 以清除
+  public setMasterPlan(plan: MasterPlan | null): void {
+    this.snapshot = {
+      ...this.snapshot,
+      masterPlan: plan ? deepClone(plan) : null,
+    };
+  }
+
+  // 对现有 master plan 进行局部更新
+  public patchMasterPlan(patch: Partial<MasterPlan>): void {
+    const existing = this.snapshot.masterPlan;
+    if (!existing) {
+      throw new Error('Cannot patch master plan before it is set');
+    }
+    this.snapshot = {
+      ...this.snapshot,
+      masterPlan: {
+        ...existing,
+        ...deepClone(patch),
+        steps: patch.steps ? deepClone(patch.steps) : existing.steps,
+        history: patch.history ? deepClone(patch.history) : existing.history,
+        metadata: patch.metadata ?? existing.metadata,
+      },
+    };
   }
 
   // 更新当前激活任务并递增迭代计数
@@ -123,6 +163,12 @@ export class AgentContext {
       },
       observations: update.observations ?? this.snapshot.observations,
       tasks: update.tasks ?? this.snapshot.tasks,
+      masterPlan:
+        update.masterPlan === undefined
+          ? this.snapshot.masterPlan
+          : update.masterPlan
+          ? deepClone(update.masterPlan)
+          : null,
       iteration:
         update.iteration ?? (update.activeTaskId ? this.snapshot.iteration + 1 : this.snapshot.iteration),
     };

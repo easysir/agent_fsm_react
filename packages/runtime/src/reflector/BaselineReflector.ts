@@ -1,65 +1,214 @@
-/**
- * BaselineReflector 是一个基础的反思器实现，用于在工具执行完成后根据观察结果决定代理的下一步动作。
- *
- * 主要职责：
- * 1. 根据工具执行的观察结果判断是否需要重试、继续规划、直接完成或终止。
- * 2. 当执行成功时，负责把对应任务标记为成功，并告知是否还有未完成的子任务。
- * 3. 返回给状态机一个结构化的 ReflectOutcome，指导状态机下一阶段（retry/continue/complete/abort）。
- *
- * 工作流程：
- * - 如果没有观察结果或观察失败，并且未达到重试上限，则返回 retry，提示重新执行此次 plan。
- * - 如果失败且重试次数已耗尽，则返回 abort，并附带失败原因，状态机会走结束流程。
- * - 如果执行成功，则更新任务状态为 succeeded，同时检查是否还有未完成的子任务：
- *     - 没有剩余子任务：返回 complete，状态机会进入终结态。
- *     - 仍有子任务待完成：返回 continue，提示 planner 继续计划后续任务。
- */
+import { nanoid } from "nanoid";
 import type {
-  Reflector,
+  MasterPlan,
+  MasterPlanHistoryEntry,
+  PlanItem,
   ReflectInput,
-  ReflectOutcome,
+  ReflectionDirective,
+  ReflectionResult,
+  Reflector,
   TaskNode,
 } from "../types/index.js";
 
+function clone<T>(value: T): T {
+  const sc = (globalThis as { structuredClone?: <U>(target: U) => U })
+    .structuredClone;
+  if (typeof sc === "function") {
+    return sc(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function buildHistoryEntry(
+  plan: MasterPlan,
+  event: MasterPlanHistoryEntry["event"],
+  summary: string,
+  payload?: Record<string, unknown>
+): MasterPlanHistoryEntry {
+  const lastVersion =
+    plan.history?.[plan.history.length - 1]?.version ?? 0;
+  return {
+    version: lastVersion + 1,
+    timestamp: Date.now(),
+    event,
+    summary,
+    ...(payload ? { payload } : {}),
+  };
+}
+
 export class BaselineReflector implements Reflector {
-  async reflect(input: ReflectInput): Promise<ReflectOutcome> {
-    const { observation, planStep, attempt } = input;
+  async reflect(input: ReflectInput): Promise<ReflectionResult> {
+    const { plan, currentStep, observation, attempt } = input;
+    const updatedPlan = clone(plan);
+    const now = Date.now();
+    const currentIndex = updatedPlan.currentIndex;
+    const steps = updatedPlan.steps.map((step) => ({ ...step }));
+    updatedPlan.steps = steps;
+    updatedPlan.updatedAt = now;
+
+    const relatedTaskId =
+      currentStep.relatedTaskId ??
+      input.context.activeTaskId ??
+      input.context.rootTaskId;
+    const currentTask = relatedTaskId
+      ? input.context.tasks[relatedTaskId]
+      : undefined;
+
+    const tasksToUpdate: TaskNode[] = [];
+    const retryLimit = currentStep.retry?.limit ?? 0;
 
     if (!observation || !observation.success) {
-      if (attempt < (planStep.retryLimit ?? 1)) {
-        return {
-          status: "retry",
-          message: "Observation missing or failed, retrying",
-        };
-      }
-      return {
-        status: "abort",
-        message: "Observation failed and retries exhausted",
+      const canRetry = attempt < retryLimit;
+      steps[currentIndex] = {
+        ...steps[currentIndex],
+        status: canRetry ? "in_progress" : "failed",
       };
+
+      if (currentTask) {
+        tasksToUpdate.push({
+          ...currentTask,
+          status: canRetry ? "in_progress" : "failed",
+          updatedAt: now,
+        });
+      }
+
+      const historyEntry = buildHistoryEntry(
+        updatedPlan,
+        "step_updated",
+        canRetry
+          ? "Observation failed, retrying current step"
+          : "Observation failed and no retries remain",
+        {
+          stepId: currentStep.id,
+          attempt,
+          retryLimit,
+        }
+      );
+      updatedPlan.history = [...(updatedPlan.history ?? []), historyEntry];
+
+      if (canRetry) {
+        updatedPlan.status = "in_progress";
+        return this.buildResult(
+          "retry",
+          "Observation missing or failed, retrying",
+          updatedPlan,
+          historyEntry,
+          tasksToUpdate,
+          { attempt, retryLimit }
+        );
+      }
+
+      updatedPlan.status = "failed";
+      return this.buildResult(
+        "abort",
+        "Observation failed and retries exhausted",
+        updatedPlan,
+        historyEntry,
+        tasksToUpdate,
+        { attempt, retryLimit }
+      );
     }
 
-    const updatedTask: TaskNode = {
-      ...input.context.tasks[planStep.taskId],
+    steps[currentIndex] = {
+      ...steps[currentIndex],
       status: "succeeded",
-      updatedAt: Date.now(),
-      children: input.context.tasks[planStep.taskId].children,
     };
 
-    const remainingChildren = updatedTask.children.filter(
-      (childId) => input.context.tasks[childId]?.status !== "succeeded"
-    );
-
-    if (remainingChildren.length === 0) {
-      return {
-        status: "complete",
-        message: "Task completed successfully",
-        updatedTasks: [updatedTask],
-      };
+    if (currentTask) {
+      tasksToUpdate.push({
+        ...currentTask,
+        status: "succeeded",
+        updatedAt: now,
+      });
     }
 
+    const nextIndex = this.findNextExecutableStep(steps, currentIndex);
+
+    if (nextIndex === null) {
+      updatedPlan.status = "completed";
+      updatedPlan.currentIndex =
+        steps.length === 0 ? 0 : Math.max(steps.length - 1, 0);
+      const historyEntry = buildHistoryEntry(
+        updatedPlan,
+        "status_changed",
+        "All plan steps completed",
+        {
+          finalStepId: currentStep.id,
+        }
+      );
+      updatedPlan.history = [...(updatedPlan.history ?? []), historyEntry];
+      return this.buildResult(
+        "complete",
+        "Task completed successfully",
+        updatedPlan,
+        historyEntry,
+        tasksToUpdate
+      );
+    }
+
+    const nextStep: PlanItem = {
+      ...steps[nextIndex],
+      status:
+        steps[nextIndex].status === "pending" ||
+        steps[nextIndex].status === "ready"
+          ? "in_progress"
+          : steps[nextIndex].status,
+    };
+    steps[nextIndex] = nextStep;
+    updatedPlan.currentIndex = nextIndex;
+    updatedPlan.status = "in_progress";
+
+    const historyEntry = buildHistoryEntry(
+      updatedPlan,
+      "pointer_advanced",
+      `Advanced to step ${nextStep.title}`,
+      {
+        fromStepId: currentStep.id,
+        toStepId: nextStep.id,
+      }
+    );
+    updatedPlan.history = [...(updatedPlan.history ?? []), historyEntry];
+
+    return this.buildResult(
+      "advance",
+      "Step succeeded, moving to the next item",
+      updatedPlan,
+      historyEntry,
+      tasksToUpdate
+    );
+  }
+
+  private findNextExecutableStep(
+    steps: PlanItem[],
+    currentIndex: number
+  ): number | null {
+    for (let index = currentIndex + 1; index < steps.length; index += 1) {
+      const status = steps[index].status;
+      if (status !== "succeeded" && status !== "skipped" && status !== "failed") {
+        return index;
+      }
+    }
+    return null;
+  }
+
+  private buildResult(
+    directive: ReflectionDirective,
+    message: string,
+    plan: MasterPlan,
+    historyEntry: MasterPlanHistoryEntry,
+    taskUpdates: TaskNode[],
+    extraMetadata?: Record<string, unknown>
+  ): ReflectionResult {
     return {
-      status: "continue",
-      message: "Child tasks remain, continue planning",
-      updatedTasks: [updatedTask],
+      directive,
+      message,
+      plan,
+      historyEntry,
+      metadata: {
+        ...(extraMetadata ?? {}),
+        taskUpdates,
+        eventId: nanoid(),
+      },
     };
   }
 }

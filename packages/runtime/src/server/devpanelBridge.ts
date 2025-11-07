@@ -3,6 +3,15 @@ import { AgentRuntime } from "../core/AgentRuntime.js";
 import { InMemoryToolRegistry } from "../registry/ToolRegistry.js";
 import { EchoTool } from "../tools/EchoTool.js";
 import { MathTool } from "../tools/MathTool.js";
+import { CodeReadFileTool } from "../tools/CodeReadFileTool.js";
+import { CodeSearchTool } from "../tools/CodeSearchTool.js";
+import { CodeSummarizeTool } from "../tools/CodeSummarizeTool.js";
+import { CodeTestRunnerTool } from "../tools/CodeTestRunnerTool.js";
+import { ShellSearchTool } from "../tools/ShellSearchTool.js";
+import { CodeWriteFileTool } from "../tools/CodeWriteFileTool.js";
+import { CodeEnsureDirTool } from "../tools/CodeEnsureDirTool.js";
+import { ShellCommandTool } from "../tools/ShellCommandTool.js";
+import { CodeGenerateSnippetTool } from "../tools/CodeGenerateSnippetTool.js";
 import { BaselinePlanner } from "../planner/BaselinePlanner.js";
 import { BaselineReflector } from "../reflector/BaselineReflector.js";
 import type {
@@ -11,6 +20,21 @@ import type {
   AgentContextSnapshot,
   BusEvent,
 } from "../types/index.js";
+
+const WORKSPACE_ROOT = "/Users/bytedance/Desktop/playground";
+const LLM_TIMEOUT_MS =
+  Number.parseInt(process.env.DEVPANEL_LLM_TIMEOUT_MS ?? "", 10) || 60_000;
+
+try {
+  process.chdir(WORKSPACE_ROOT);
+  // eslint-disable-next-line no-console
+  console.log(`[devpanel-bridge] cwd set to ${WORKSPACE_ROOT}`);
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(
+    `[devpanel-bridge] failed to set workspace root to ${WORKSPACE_ROOT}: ${message}`
+  );
+}
 
 /**
  * 桥接服务器配置选项
@@ -63,12 +87,25 @@ export function startDevpanelBridge(options: BridgeOptions = {}): void {
   const toolRegistry = new InMemoryToolRegistry([
     new EchoTool(),
     new MathTool(),
+    new CodeReadFileTool(),
+    new CodeSearchTool(),
+    new CodeSummarizeTool(),
+    new CodeTestRunnerTool(),
+    new ShellSearchTool(),
+    new CodeWriteFileTool(),
+    new CodeEnsureDirTool(),
+    new ShellCommandTool(),
+    new CodeGenerateSnippetTool(),
   ]);
 
   const runtime = new AgentRuntime({
     config: {
       agentId: "devpanel-agent",
-      planner: new BaselinePlanner({ toolRegistry, provider: "deepseek" }),
+      planner: new BaselinePlanner({
+        toolRegistry,
+        provider: "deepseek",
+        llm: { requestTimeoutMs: LLM_TIMEOUT_MS },
+      }),
       reflector: new BaselineReflector(),
       toolRegistry,
       guard: {

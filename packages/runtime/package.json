@@ -10,7 +10,8 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run",
     "dev": "tsx watch src/examples/demo.ts",
-    "dev:bridge": "tsx src/server/devpanelBridge.ts"
+    "dev:bridge": "tsx src/server/devpanelBridge.ts",
+    "dev:bridge:watch": "tsx watch src/server/devpanelBridge.ts"
   },
   "dependencies": {
     "eventemitter3": "^5.0.1",

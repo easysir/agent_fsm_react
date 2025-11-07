@@ -4,7 +4,8 @@ import type {
   AgentContextSnapshot,
   BusEvent,
   ExecutionResult,
-  PlanStep,
+  MasterPlan,
+  PlanItem,
   ToolInput,
   ToolRegistry,
 } from "../types/index.js";
@@ -30,23 +31,33 @@ export class Executor {
     this.contextManager = options.contextManager;
   }
 
-  public async execute(
-    planStep: PlanStep,
-    snapshot: AgentContextSnapshot,
-    preferredToolId?: string
-  ): Promise<ExecutionResult> {
-    // 如果上层明确指定 preferredToolId，则优先使用该工具；否则取计划里推荐顺序的第一个
-    const toolId = preferredToolId ?? planStep.toolCandidates[0];
+  public async execute({
+    plan,
+    stepIndex,
+    step,
+    snapshot,
+    preferredToolId,
+  }: {
+    plan: MasterPlan;
+    stepIndex: number;
+    step: PlanItem;
+    snapshot: AgentContextSnapshot;
+    preferredToolId?: string;
+  }): Promise<ExecutionResult> {
+    const toolCandidates = step.toolSequence ?? [];
+    const primary = toolCandidates[0];
+    const toolId = preferredToolId ?? primary?.toolId;
     if (!toolId) {
-      throw new Error(
-        `No tool candidate available for task ${planStep.taskId}`
-      );
+      throw new Error(`No tool candidate available for plan item ${step.id}`);
     }
 
     const tool = this.toolRegistry.get(toolId);
     if (!tool) {
       throw new Error(`Tool ${toolId} is not registered`);
     }
+    const selected =
+      toolCandidates.find((candidate) => candidate.toolId === toolId) ??
+      primary;
 
     const traceId = nanoid();
     const requestEvent: BusEvent = {
@@ -54,20 +65,24 @@ export class Executor {
       type: "tool.request",
       timestamp: Date.now(),
       traceId,
-      relatedTaskId: planStep.taskId,
+      relatedTaskId: step.relatedTaskId ?? step.id,
       payload: {
         toolId,
-        planStep,
+        planId: plan.planId,
+        stepId: step.id,
+        stepIndex,
+        step,
       },
     };
     this.eventBus.emit(requestEvent);
 
     const input: ToolInput = {
-      taskId: planStep.taskId,
+      taskId: step.relatedTaskId ?? step.id,
       traceId,
       params: {
-        goal: planStep.goal,
-        ...(planStep.toolParameters ?? {}),
+        planId: plan.planId,
+        stepId: step.id,
+        ...(selected?.parameters ?? {}),
       },
       context: snapshot,
     };
@@ -81,17 +96,22 @@ export class Executor {
       type: "tool.result",
       timestamp: Date.now(),
       traceId,
-      relatedTaskId: planStep.taskId,
+      relatedTaskId: step.relatedTaskId ?? step.id,
       payload: {
         toolId,
-        planStep,
+        planId: plan.planId,
+        stepId: step.id,
+        stepIndex,
+        step,
         result: { ...result, latencyMs: elapsed },
       },
     };
     this.eventBus.emit(resultEvent);
 
     const executionResult: ExecutionResult = {
-      planStep,
+      planId: plan.planId,
+      stepIndex,
+      step,
       toolId,
       result: { ...result, latencyMs: elapsed },
     };

@@ -1,5 +1,46 @@
 import type { Observable } from 'rxjs';
 import type { ContextManager } from '../context/BridgeContextManager.interface.js';
+import type {
+  MasterPlan,
+  MasterPlanHistoryEntry,
+  MasterPlanHistoryEvent,
+  MasterPlanStatus,
+  PlanItem,
+  PlanItemRetry,
+  PlanItemStatus,
+  PlanItemTool,
+  PlannerResult,
+  ReflectionDirective,
+  ReflectionResult,
+} from './masterPlan.js';
+
+export {
+  MasterPlanHistoryEntrySchema,
+  MasterPlanHistoryEventSchema,
+  MasterPlanSchema,
+  MasterPlanStatusSchema,
+  PlanItemRetrySchema,
+  PlanItemSchema,
+  PlanItemStatusSchema,
+  PlanItemToolSchema,
+  PlannerResultSchema,
+  ReflectionDirectiveSchema,
+  ReflectionResultSchema,
+} from './masterPlan.js';
+
+export type {
+  MasterPlan,
+  MasterPlanHistoryEntry,
+  MasterPlanHistoryEvent,
+  MasterPlanStatus,
+  PlanItem,
+  PlanItemRetry,
+  PlanItemStatus,
+  PlanItemTool,
+  PlannerResult,
+  ReflectionDirective,
+  ReflectionResult,
+} from './masterPlan.js';
 
 export type AgentState = 'plan' | 'act' | 'observe' | 'reflect' | 'finish' | 'error';
 
@@ -22,25 +63,6 @@ export interface TaskNode {
   createdAt: number;
   /** 最近一次更新的时间戳（毫秒） */
   updatedAt: number;
-}
-
-export interface PlanStep {
-  /** 当前计划步骤关联的任务 ID，应保持与激活任务一致 */
-  taskId: string;
-  /** 本步骤的目标描述，用于指导工具输入与后续反思 */
-  goal: string;
-  /** 优先级顺序的工具候选列表，执行器将按顺序尝试 */
-  toolCandidates: string[];
-  /** 判断步骤成功的条件说明，供反思器和执行器参考 */
-  successCriteria: string;
-  /** 可选：该步骤允许的最大执行耗时（毫秒） */
-  timeoutMs?: number;
-  /** 可选：本步骤允许的重试次数 */
-  retryLimit?: number;
-  /** 可选：规划出的后续任务 ID 列表，用于更新任务树 */
-  next?: string[];
-  /** 可选：传递给工具的参数，键值对形式 */
-  toolParameters?: Record<string, unknown>;
 }
 
 export interface Observation {
@@ -78,7 +100,7 @@ export interface BusEvent {
 export interface AgentConfig {
   /** 唯一标识当前代理实例，用于事件广播与快照追踪 */
   agentId: string;
-  /** 负责基于上下文生成下一步 PlanStep 的规划器实现 */
+  /** 负责基于上下文生成 MasterPlan 的规划器实现 */
   planner: Planner;
   /** 在执行后进行复盘并决定状态机后续流向的反思器实现 */
   reflector: Reflector;
@@ -97,25 +119,19 @@ export interface ExecutionGuard {
 }
 
 export interface Planner {
-  plan(context: AgentContextSnapshot): Promise<PlanStep>;
+  plan(context: AgentContextSnapshot): Promise<PlannerResult>;
 }
 
 export interface ReflectInput {
-  planStep: PlanStep; // 当前执行的计划步骤
+  plan: MasterPlan; // 当前执行的完整计划
+  currentStep: PlanItem; // 当前指针指向的计划项
   observation: Observation | null; // 工具执行后的观测结果
   context: AgentContextSnapshot; // 反思时的完整上下文快照
   attempt: number; // 已尝试执行的次数（用于控制重试）
 }
 
-export interface ReflectOutcome {
-  status: 'continue' | 'retry' | 'fallback' | 'user_input' | 'abort' | 'complete'; // 状态机下一步动作
-  message?: string; // 可选的提示信息，用于记录或展示
-  updatedTasks?: TaskNode[]; // 需要同步更新状态的任务列表
-  fallbackToolId?: string; // 可选的备用工具 ID（用于 fallback/retry 场景）
-}
-
 export interface Reflector {
-  reflect(input: ReflectInput): Promise<ReflectOutcome>;
+  reflect(input: ReflectInput): Promise<ReflectionResult>;
 }
 
 export interface ToolInput {
@@ -147,7 +163,9 @@ export interface ToolRegistry {
 }
 
 export interface ExecutionResult {
-  planStep: PlanStep;
+  planId: string;
+  stepIndex: number;
+  step: PlanItem;
   toolId?: string;
   result: ToolResult;
 }
@@ -169,6 +187,8 @@ export interface AgentContextSnapshot {
   metadata: Record<string, unknown>;
   /** 当前迭代次数，配合守卫或日志使用 */
   iteration: number;
+  /** 全局的主计划结构，未生成时为 null */
+  masterPlan: MasterPlan | null;
 }
 
 export interface AgentContextUpdate {
@@ -178,6 +198,7 @@ export interface AgentContextUpdate {
   workingMemory?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   iteration?: number;
+  masterPlan?: MasterPlan | null;
 }
 
 export interface RuntimeEventStream {

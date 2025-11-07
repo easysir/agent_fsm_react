@@ -20,6 +20,12 @@ pnpm --filter @agent/runtime dev:bridge
 
 服务器将在 `http://localhost:3030` 启动。
 
+如需在开发过程中监听源码变更并自动重启，可使用：
+
+```bash
+pnpm --filter @agent/runtime dev:bridge:watch
+```
+
 ### 启动开发面板
 
 ```bash

@@ -23,17 +23,32 @@ export function createAgentMachine(
   const machineConfig: any = {
     id: `agent-${config.agentId}`,
     initial: "plan",
-    context: (): MachineContext => ({
-      agentContext,
-      snapshot: agentContext.getSnapshot(),
-      planStep: null,
-      executionResult: null,
-      observation: null,
-      attempt: 0,
-      iterations: 0,
-      failures: 0,
-      startedAt: Date.now(),
-    }),
+    context: (): MachineContext => {
+      const initialPlan = agentContext.getMasterPlan();
+      const initialIndex =
+        initialPlan &&
+        initialPlan.currentIndex >= 0 &&
+        initialPlan.currentIndex < initialPlan.steps.length
+          ? initialPlan.currentIndex
+          : null;
+      const initialStep =
+        initialPlan && initialIndex !== null
+          ? initialPlan.steps[initialIndex]
+          : null;
+      return {
+        agentContext,
+        snapshot: agentContext.getSnapshot(),
+        masterPlan: initialPlan,
+        currentStep: initialStep,
+        currentStepIndex: initialIndex,
+        executionResult: null,
+        observation: null,
+        attempt: 0,
+        iterations: 0,
+        failures: 0,
+        startedAt: Date.now(),
+      };
+    },
     states: {
       plan: {
         entry: "checkGuards",
@@ -43,7 +58,7 @@ export function createAgentMachine(
           src: "plannerService",
           onDone: {
             target: "act",
-            actions: "storePlanStep",
+            actions: "storePlannerResult",
           },
           onError: {
             target: "error",
@@ -75,9 +90,9 @@ export function createAgentMachine(
           {
             target: "plan",
             guard: ({ context }: { context: MachineContext }) => {
-              return !context.planStep;
+              return !context.currentStep;
             },
-            actions: "logMissingPlanStep",
+            actions: "logMissingPlanItem",
           },
         ],
         invoke: {
@@ -88,36 +103,38 @@ export function createAgentMachine(
             {
               target: "finish",
               guard: ({ event }: { event: any }) =>
-                event?.output?.status === "complete",
-              actions: "applyReflectOutcome",
-            },
-            {
-              target: "plan",
-              guard: ({ event }: { event: any }) =>
-                event?.output?.status === "continue",
-              actions: ["applyReflectOutcome", "advanceIteration"],
-            },
-            {
-              target: "act",
-              guard: ({ event }: { event: any }) =>
-                event?.output?.status === "retry",
-              actions: "applyRetryOutcome",
-            },
-            {
-              target: "plan",
-              guard: ({ event }: { event: any }) =>
-                event?.output?.status === "fallback",
-              actions: "applyFallbackOutcome",
+                event?.output?.directive === "complete",
+              actions: "commitReflectionResult",
             },
             {
               target: "finish",
               guard: ({ event }: { event: any }) =>
-                event?.output?.status === "abort",
-              actions: "applyAbortOutcome",
+                event?.output?.directive === "abort",
+              actions: "commitReflectionResult",
             },
             {
               target: "plan",
-              actions: "advanceIteration",
+              guard: ({ event }: { event: any }) =>
+                event?.output?.directive === "replan",
+              actions: "commitReflectionResult",
+            },
+            {
+              target: "plan",
+              guard: ({ event }: { event: any }) =>
+                event?.output?.directive === "await_user",
+              actions: "commitReflectionResult",
+            },
+            {
+              target: "act",
+              guard: ({ event }: { event: any }) =>
+                event?.output?.directive === "advance" ||
+                event?.output?.directive === "retry" ||
+                event?.output?.directive === "fallback",
+              actions: "commitReflectionResult",
+            },
+            {
+              target: "plan",
+              actions: "commitReflectionResult",
             },
           ],
           onError: {
@@ -136,21 +153,21 @@ export function createAgentMachine(
           {
             target: "plan",
             guard: ({ context }: { context: MachineContext }) => {
-              const { planStep, failures } = context;
+              const { currentStep, failures } = context;
               const maxFailures = guardConfig.maxFailures;
               const withinFailureLimit =
                 typeof maxFailures !== "number" ? true : failures < maxFailures;
-              return !planStep && withinFailureLimit;
+              return !currentStep && withinFailureLimit;
             },
           },
           {
             target: "reflect",
             guard: ({ context }: { context: MachineContext }) => {
-              const { planStep, failures } = context;
+              const { currentStep, failures } = context;
               const maxFailures = guardConfig.maxFailures;
               const withinFailureLimit =
                 typeof maxFailures !== "number" ? true : failures < maxFailures;
-              return Boolean(planStep) && withinFailureLimit;
+              return Boolean(currentStep) && withinFailureLimit;
             },
           },
           { target: "finish" },

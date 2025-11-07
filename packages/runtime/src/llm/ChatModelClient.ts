@@ -161,16 +161,12 @@ export class ChatModelClient {
         signal: controller.signal,
       });
 
-      const responseClone = response.clone();
+      const rawBody = await response.text();
       let responsePreview: unknown;
       try {
-        responsePreview = await responseClone.json();
+        responsePreview = JSON.parse(rawBody);
       } catch {
-        try {
-          responsePreview = await responseClone.text();
-        } catch {
-          responsePreview = "<unavailable>";
-        }
+        responsePreview = rawBody.slice(0, 4_096);
       }
 
       // eslint-disable-next-line no-console
@@ -183,20 +179,26 @@ export class ChatModelClient {
       });
 
       if (!response.ok) {
-        let errText: string | undefined;
-        try {
-          errText = await response.text();
-        } catch {
-          // ignore secondary error
-        }
         throw new Error(
           `${capitalize(this.provider)} request failed with status ${
             response.status
-          } ${response.statusText}${errText ? `: ${errText}` : ""}`
+          } ${response.statusText}${
+            rawBody ? `: ${truncate(rawBody, 2_000)}` : ""
+          }`
         );
       }
 
-      const json = (await response.json()) as ChatCompletionResponse;
+      let json: ChatCompletionResponse;
+      try {
+        json = JSON.parse(rawBody) as ChatCompletionResponse;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `${capitalize(
+            this.provider
+          )} response could not be parsed as JSON (${message})`
+        );
+      }
       const content = json.choices?.[0]?.message?.content?.trim();
       if (!content) {
         throw new Error(
@@ -243,4 +245,11 @@ function stripTrailingSlash(value: string): string {
 function capitalize(value: string): string {
   if (!value) return value;
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength)}…`;
 }

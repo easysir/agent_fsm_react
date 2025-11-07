@@ -2,8 +2,9 @@
 import type {
   AgentContextSnapshot,
   ExecutionResult,
+  MasterPlan,
   Observation,
-  PlanStep,
+  PlanItem,
 } from '../types/index.js';
 import { AgentContext } from '../core/AgentContext.js';
 
@@ -12,8 +13,12 @@ export interface MachineContext {
   agentContext: AgentContext;
   /** 最近一次读取的上下文快照，用于传给 planner/executor/reflector */
   snapshot: AgentContextSnapshot;
-  /** 当前待执行的计划步骤；若为 null 表示尚未规划 */
-  planStep: PlanStep | null;
+  /** 主计划的完整结构 */
+  masterPlan: MasterPlan | null;
+  /** 指针指向的当前步骤，若没有可执行步骤则为 null */
+  currentStep: PlanItem | null;
+  /** 当前步骤在 steps 数组中的索引，若无计划则为 null */
+  currentStepIndex: number | null;
   /** 最近一次工具执行的结果，供观察/反思阶段使用 */
   executionResult: ExecutionResult | null;
   /** 根据执行结果推导出的观察信息 */

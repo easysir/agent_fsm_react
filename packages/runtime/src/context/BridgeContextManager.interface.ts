@@ -2,7 +2,7 @@ import type {
   AgentContextSnapshot,
   ExecutionResult,
   Observation,
-  PlanStep,
+  PlannerResult,
 } from "../types/index.js";
 
 export interface PlanningContext {
@@ -34,8 +34,8 @@ export interface ContextManager {
     snapshot: AgentContextSnapshot
   ): Promise<PlanningContext>;
   /** 记录一次规划结果，便于后续的记忆管理或统计 */
-  recordPlanStep(
-    plan: PlanStep,
+  recordPlannerResult(
+    result: PlannerResult,
     snapshot: AgentContextSnapshot
   ): Promise<void>;
   /** 记录一次工具执行结果 */

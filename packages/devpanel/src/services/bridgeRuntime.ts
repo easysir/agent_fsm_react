@@ -65,7 +65,6 @@ export function connectBridgeRuntime(
       };
 
       eventSource.onopen = () => {
-        console.log("Connected to devpanel bridge");
         // 连接成功时调用回调，更新连接状态
         callbacks.onConnected?.();
       };

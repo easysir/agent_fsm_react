@@ -3,14 +3,14 @@ import { fromPromise } from "xstate";
 import type {
   AgentConfig,
   ExecutionResult,
-  PlanStep,
-  ReflectOutcome,
+  PlannerResult,
+  ReflectionResult,
 } from "../types/index.js";
 import { Executor } from "../core/Executor.js";
 import type { InvokeInput } from "./agentTypes.js";
 
 export function createPlannerService(config: AgentConfig) {
-  return fromPromise<PlanStep, InvokeInput>(async ({ input }) => {
+  return fromPromise<PlannerResult, InvokeInput>(async ({ input }) => {
     const { context } = input ?? {};
     if (!context) {
       throw new Error("Planner invoke received no context");
@@ -21,8 +21,8 @@ export function createPlannerService(config: AgentConfig) {
       throw new Error("Planner invoked without snapshot");
     }
     try {
-      const planStep = await config.planner.plan(snapshot);
-      return planStep;
+      const plannerResult = await config.planner.plan(snapshot);
+      return plannerResult;
     } catch (error) {
       throw error instanceof Error
         ? error
@@ -34,11 +34,20 @@ export function createPlannerService(config: AgentConfig) {
 export function createExecutorService(executor: Executor) {
   return fromPromise<ExecutionResult, InvokeInput>(async ({ input }) => {
     const { context } = input ?? {};
-    if (!context?.planStep) {
-      throw new Error("Missing plan step when attempting execution");
+    if (
+      !context?.masterPlan ||
+      context.currentStepIndex === null ||
+      !context.currentStep
+    ) {
+      throw new Error("Missing master plan or current step for execution");
     }
     try {
-      return await executor.execute(context.planStep, context.snapshot);
+      return await executor.execute({
+        plan: context.masterPlan,
+        stepIndex: context.currentStepIndex,
+        step: context.currentStep,
+        snapshot: context.snapshot,
+      });
     } catch (error) {
       throw error instanceof Error
         ? error
@@ -48,14 +57,15 @@ export function createExecutorService(executor: Executor) {
 }
 
 export function createReflectorService(config: AgentConfig) {
-  return fromPromise<ReflectOutcome, InvokeInput>(async ({ input }) => {
+  return fromPromise<ReflectionResult, InvokeInput>(async ({ input }) => {
     const { context } = input ?? {};
-    if (!context?.planStep) {
-      throw new Error("Reflector invoked without plan step");
+    if (!context?.masterPlan || !context.currentStep) {
+      throw new Error("Reflector invoked without master plan");
     }
     try {
       return await config.reflector.reflect({
-        planStep: context.planStep,
+        plan: context.masterPlan,
+        currentStep: context.currentStep,
         observation: context.observation,
         context: context.snapshot,
         attempt: context.attempt + 1,

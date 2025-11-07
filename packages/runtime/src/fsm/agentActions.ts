@@ -4,12 +4,29 @@ import type {
   AgentConfig,
   AgentContextSnapshot,
   ExecutionResult,
+  MasterPlan,
+  PlanItem,
+  PlannerResult,
+  ReflectionResult,
   Observation,
-  PlanStep,
-  ReflectOutcome,
+  TaskNode,
 } from "../types/index.js";
 import type { MachineContext } from "./agentTypes.js";
 import type { ContextManager } from "../context/BridgeContextManager.interface.js";
+
+function resolveCurrentStep(plan: MasterPlan | null): {
+  step: PlanItem | null;
+  index: number | null;
+} {
+  if (!plan) {
+    return { step: null, index: null };
+  }
+  const index = plan.currentIndex;
+  if (index < 0 || index >= plan.steps.length) {
+    return { step: null, index: null };
+  }
+  return { step: plan.steps[index], index };
+}
 
 export function createActions(
   guardConfig: AgentConfig["guard"],
@@ -34,6 +51,43 @@ export function createActions(
       .catch((error) => warnContextManagerFailure("observation", error));
   };
 
+  const recordPlannerResult = (
+    result: PlannerResult,
+    snapshot: AgentContextSnapshot
+  ): void => {
+    if (!contextManager) {
+      return;
+    }
+    void contextManager
+      .recordPlannerResult(result, snapshot)
+      .catch((error) => warnContextManagerFailure("planner", error));
+  };
+
+  const extractTaskUpdates = (
+    metadata: Record<string, unknown> | undefined
+  ): TaskNode[] => {
+    if (!metadata) {
+      return [];
+    }
+    const updates = (metadata as { taskUpdates?: unknown }).taskUpdates;
+    if (!Array.isArray(updates)) {
+      return [];
+    }
+    return updates
+      .map((candidate) => {
+        if (
+          candidate &&
+          typeof candidate === "object" &&
+          "taskId" in candidate &&
+          typeof (candidate as { taskId?: unknown }).taskId === "string"
+        ) {
+          return candidate as TaskNode;
+        }
+        return null;
+      })
+      .filter((value): value is TaskNode => value !== null);
+  };
+
   return {
     checkGuards: ({ context }: { context: MachineContext }) => {
       const elapsed = Date.now() - context.startedAt;
@@ -54,23 +108,31 @@ export function createActions(
         );
       }
     },
-    storePlanStep: assign(({ context, event }) => {
-      const eventKeys =
-        event && typeof event === "object" ? Object.keys(event) : [];
-      const planStep = (event as { output?: PlanStep })?.output;
-      if (!planStep) {
+    storePlannerResult: assign(({ context, event }) => {
+      const plannerResult = (event as { output?: PlannerResult })?.output;
+      if (!plannerResult) {
         return {
-          planStep: context.planStep,
+          masterPlan: context.masterPlan,
+          currentStep: context.currentStep,
+          currentStepIndex: context.currentStepIndex,
           executionResult: null,
           observation: null,
           attempt: 0,
         };
       }
+      const agentCtx = context.agentContext;
+      agentCtx.setMasterPlan(plannerResult.plan);
+      const snapshot = agentCtx.getSnapshot();
+      recordPlannerResult(plannerResult, snapshot);
+      const { step, index } = resolveCurrentStep(plannerResult.plan);
       return {
-        planStep,
+        masterPlan: plannerResult.plan,
+        currentStep: step,
+        currentStepIndex: index,
         executionResult: null,
         observation: null,
         attempt: 0,
+        snapshot,
       };
     }),
     storeExecutionResult: assign(({ context, event }) => {
@@ -93,11 +155,15 @@ export function createActions(
       }
       const latency = executionResult.result.latencyMs;
       const error = executionResult.result.error;
+      const relatedTaskId =
+        executionResult.step.relatedTaskId ?? executionResult.step.id;
       const observation: Observation = {
         source: "tool",
-        relatedTaskId: executionResult.planStep.taskId,
+        relatedTaskId,
         timestamp: Date.now(),
-        payload: executionResult.result.output,
+        payload: {
+          ...executionResult.result.output,
+        },
         success: executionResult.result.success,
         ...(typeof latency === "number" ? { latencyMs: latency } : {}),
         ...(typeof error === "string" ? { error } : {}),
@@ -110,95 +176,42 @@ export function createActions(
         snapshot,
       };
     }),
-    applyReflectOutcome: assign(({ context, event }) => {
-      const outcome = (event as { output?: ReflectOutcome })?.output;
-      const ctx = context.agentContext;
-      if (!outcome) {
+    commitReflectionResult: assign(({ context, event }) => {
+      const reflection = (event as { output?: ReflectionResult })?.output;
+      const agentCtx = context.agentContext;
+      if (!reflection) {
         return {
           iterations: context.iterations + 1,
-          snapshot: ctx.getSnapshot(),
+          snapshot: agentCtx.getSnapshot(),
         };
       }
-      if (outcome.updatedTasks) {
-        outcome.updatedTasks.forEach((task) => ctx.upsertTask(task));
+      agentCtx.setMasterPlan(reflection.plan);
+      const taskUpdates = extractTaskUpdates(reflection.metadata);
+      if (taskUpdates.length > 0) {
+        taskUpdates.forEach((task) => agentCtx.upsertTask(task));
       }
-      if (outcome.message) {
-        ctx.mergeWorkingMemory({ reflectMessage: outcome.message });
+      if (reflection.message) {
+        agentCtx.mergeWorkingMemory({ reflectMessage: reflection.message });
       }
+      const snapshot = agentCtx.getSnapshot();
+      const { step, index } = resolveCurrentStep(reflection.plan);
       return {
+        masterPlan: reflection.plan,
+        currentStep: step,
+        currentStepIndex: index,
         iterations: context.iterations + 1,
-        snapshot: ctx.getSnapshot(),
+        snapshot,
+        attempt:
+          reflection.directive === "retry" ||
+          reflection.directive === "fallback"
+            ? context.attempt + 1
+            : 0,
       };
     }),
-    applyRetryOutcome: assign(({ context, event }) => {
-      const outcome = (event as { output?: ReflectOutcome })?.output;
-      if (!outcome) {
-        return {
-          attempt: context.attempt + 1,
-          iterations: context.iterations + 1,
-        };
-      }
-      const planStep = context.planStep;
-      if (!planStep || !outcome.fallbackToolId) {
-        return {
-          attempt: context.attempt + 1,
-          iterations: context.iterations + 1,
-        };
-      }
-      return {
-        attempt: context.attempt + 1,
-        iterations: context.iterations + 1,
-        planStep: {
-          ...planStep,
-          toolCandidates: [outcome.fallbackToolId, ...planStep.toolCandidates],
-        },
-      };
-    }),
-    applyFallbackOutcome: assign(({ context, event }) => {
-      const outcome = (event as { output?: ReflectOutcome })?.output;
-      const ctx = context.agentContext;
-      if (!outcome) {
-        return {
-          iterations: context.iterations + 1,
-          snapshot: ctx.getSnapshot(),
-        };
-      }
-      let updatedPlanStep = context.planStep;
-      if (updatedPlanStep && outcome.fallbackToolId) {
-        if (updatedPlanStep.toolCandidates[0] !== outcome.fallbackToolId) {
-          updatedPlanStep = {
-            ...updatedPlanStep,
-            toolCandidates: [
-              outcome.fallbackToolId,
-              ...updatedPlanStep.toolCandidates,
-            ],
-          };
-        }
-      }
-      if (outcome.updatedTasks) {
-        outcome.updatedTasks.forEach((task) => ctx.upsertTask(task));
-      }
-      return {
-        iterations: context.iterations + 1,
-        planStep: updatedPlanStep,
-        snapshot: ctx.getSnapshot(),
-      };
-    }),
-    applyAbortOutcome: assign(({ context, event }) => {
-      const outcome = (event as { output?: ReflectOutcome })?.output;
-      const ctx = context.agentContext;
-      if (!outcome) {
-        return {
-          snapshot: ctx.getSnapshot(),
-        };
-      }
-      if (outcome.message) {
-        ctx.mergeWorkingMemory({ abortReason: outcome.message });
-      }
-      return {
-        snapshot: ctx.getSnapshot(),
-      };
-    }),
+    advanceIteration: assign(({ context }) => ({
+      iterations: context.iterations + 1,
+      snapshot: context.agentContext.getSnapshot(),
+    })),
     recordFailure: assign(({ context, event }) => {
       const ctx = context.agentContext;
       const errorData =
@@ -233,15 +246,11 @@ export function createActions(
     handleError: () => {
       // hook for runtime error handling
     },
-    advanceIteration: assign(({ context }) => ({
-      iterations: context.iterations + 1,
-      snapshot: context.agentContext.getSnapshot(),
-    })),
     logPlanError: createErrorLogger("plan"),
     logActError: createErrorLogger("act"),
     logReflectError: createErrorLogger("reflect"),
-    logMissingPlanStep: ({ context }: { context: MachineContext }) => {
-      console.warn("[agentMachine] skip reflect, missing planStep", {
+    logMissingPlanItem: ({ context }: { context: MachineContext }) => {
+      console.warn("[agentMachine] skip reflect, missing plan item", {
         failures: context.failures,
         iterations: context.iterations,
       });

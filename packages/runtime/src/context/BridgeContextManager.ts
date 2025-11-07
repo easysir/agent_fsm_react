@@ -1,8 +1,9 @@
 import type {
   AgentContextSnapshot,
   ExecutionResult,
+  MasterPlan,
   Observation,
-  PlanStep,
+  PlannerResult,
 } from "../types/index.js";
 import type {
   ContextManager,
@@ -45,8 +46,8 @@ export class BridgeContextManager implements ContextManager {
     };
   }
 
-  async recordPlanStep(
-    _plan: PlanStep,
+  async recordPlannerResult(
+    _result: PlannerResult,
     _snapshot: AgentContextSnapshot
   ): Promise<void> {
     // 默认实现不执行额外处理，留给自定义 ContextManager 扩展。
@@ -74,6 +75,7 @@ export class BridgeContextManager implements ContextManager {
       planningContext;
     const activeTaskId = snapshot.activeTaskId ?? snapshot.rootTaskId;
     const activeTask = snapshot.tasks[activeTaskId];
+    const masterPlanSummary = this.formatMasterPlan(snapshot.masterPlan ?? null);
     const taskSummaries = Object.values(snapshot.tasks)
       .map(
         (task) =>
@@ -111,8 +113,31 @@ export class BridgeContextManager implements ContextManager {
       `Working memory: ${JSON.stringify(workingMemory ?? {}, null, 2)}`,
       `Agent metadata: ${JSON.stringify(metadata ?? {}, null, 2)}`,
       "",
+      "Existing master plan:",
+      masterPlanSummary,
+      "",
       "Available tools:",
       toolSummaries,
+    ].join("\n");
+  }
+
+  private formatMasterPlan(plan: MasterPlan | null): string {
+    if (!plan) {
+      return "- none";
+    }
+    const stepLines =
+      plan.steps.length === 0
+        ? ["  - no steps"]
+        : plan.steps.map((step, index) => {
+            const pointer = index === plan.currentIndex ? ">>" : "  ";
+            return `${pointer} [${step.status}] ${step.id}: ${step.title}`;
+          });
+    return [
+      `  planId: ${plan.planId}`,
+      `  status: ${plan.status}`,
+      `  currentIndex: ${plan.currentIndex}`,
+      "  steps:",
+      ...stepLines,
     ].join("\n");
   }
 }
